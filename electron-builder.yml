@@ -23,7 +23,9 @@ electronVersion: 37.10.3
 # Empaquetamos el runtime de castlabs que ya esta instalado en node_modules.
 electronDist: node_modules/electron/dist
 # Y el paquete resultante hay que volver a firmarlo con VMP (ver el hook).
-afterPack: build/afterPack.cjs
+# En afterSign, NO en afterPack: electron-builder aun reescribe el .exe entre
+# ambos (icono/version) y eso invalida la firma.
+afterSign: build/afterSign.cjs
 # El binario nativo ya se compila con `pnpm run rebuild` (ABI de Electron).
 # Dejar que electron-builder lo reconstruya lo rompe con pnpm.
 npmRebuild: false
