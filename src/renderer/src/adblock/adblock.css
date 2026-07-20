@@ -1,0 +1,131 @@
+/* Escudo del adblock + popover de control. */
+
+.shield-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.shield {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.shield:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.shield.is-on {
+  color: var(--gold);
+}
+.shield.is-on:hover {
+  color: var(--gold-bright);
+}
+.shield.is-off {
+  color: var(--text-lo);
+  opacity: 0.7;
+}
+.shield-count {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #0a0a0b;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Captura clics fuera para cerrar (la vista nativa esta oculta mientras tanto). */
+.shield-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.shield-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 41;
+  width: 280px;
+  padding: 8px;
+  border: 1px solid #23272d;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+.shield-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 6px 8px 10px;
+}
+.shield-pop-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-hi);
+}
+.shield-pop-count {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-lo);
+}
+.shield-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 9px;
+  color: var(--text-hi);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.14s ease;
+}
+.shield-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.shield-row-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shield-row-host b {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+.shield-toggle {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+.shield-toggle.is-on {
+  color: #7ee0a5;
+  border-color: rgba(126, 224, 165, 0.4);
+}
+.shield-toggle.is-off {
+  color: var(--text-lo);
+}

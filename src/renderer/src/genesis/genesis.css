@@ -1,0 +1,156 @@
+.genesis {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(120% 80% at 50% 40%, #0a0b0d 0%, var(--bg-void) 70%);
+  overflow: hidden;
+}
+
+.genesis-bg {
+  position: absolute;
+  inset: 0;
+  opacity: 0.9;
+}
+
+/* Barra invisible arriba: zona de arrastre de la ventana + controles. Mismo
+   lenguaje que los .tb-wbtn del shell, pero discreta sobre el fondo de Genesis. */
+.genesis-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 42px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  z-index: 2;
+}
+.genesis-win {
+  display: flex;
+  gap: 2px;
+}
+.g-wbtn {
+  width: 40px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-lo);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.g-wbtn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-hi);
+}
+.g-wclose:hover {
+  background: #e23b2e;
+  color: #fff;
+}
+
+.genesis-center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 64px;
+  z-index: 1;
+}
+
+.genesis-greet {
+  text-align: center;
+  font-weight: 300;
+  letter-spacing: 0.01em;
+}
+.genesis-greet > span {
+  font-size: 30px;
+  color: var(--text-hi);
+}
+.genesis-sub {
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-lo);
+  letter-spacing: 0.02em;
+}
+
+/* Campo magnetico alrededor del "+" */
+.plus-field {
+  display: grid;
+  place-items: center;
+  width: 280px;
+  height: 280px;
+}
+
+.plus-btn {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.015);
+  color: var(--phosphor);
+  cursor: pointer;
+  transition:
+    box-shadow 0.3s ease,
+    border-color 0.3s ease,
+    background 0.3s ease;
+  box-shadow: 0 0 0 0 var(--glow);
+}
+.plus-btn[data-hot='true'] {
+  border-color: rgba(244, 213, 138, 0.5);
+  background: rgba(227, 179, 65, 0.05);
+  box-shadow:
+    0 0 28px 2px var(--gold-glow),
+    0 0 70px 8px rgba(232, 233, 235, 0.08);
+}
+
+.plus-glyph {
+  font-family: var(--font-mono);
+  font-size: 40px;
+  font-weight: 300;
+  line-height: 1;
+  display: block;
+  text-shadow: 0 0 12px var(--glow);
+}
+.plus-btn[data-hot='true'] .plus-glyph {
+  color: var(--gold-bright);
+  text-shadow: 0 0 18px rgba(244, 213, 138, 0.6);
+}
+
+.spark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  box-shadow: 0 0 6px var(--gold-bright);
+  pointer-events: none;
+}
+
+/* Pista de teclado: Enter enciende TEK. Aparece con calma para no gritar y se
+   sube sobre el "campo magnetico" del + para quedar cerca del boton. */
+.genesis-hint {
+  margin-top: -56px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-lo);
+  letter-spacing: 0.04em;
+}
+.genesis-hint kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gold);
+  border: 1px solid rgba(227, 179, 65, 0.3);
+  border-radius: 5px;
+  padding: 1px 6px;
+  background: rgba(227, 179, 65, 0.06);
+}

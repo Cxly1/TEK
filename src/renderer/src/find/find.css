@@ -1,0 +1,85 @@
+/* Barra "buscar en pagina" (Ctrl+F). Se asienta en la franja que el main libera
+   al bajar la WebContentsView; anclada a la derecha, estetica de tokens TEK. */
+.findbar {
+  position: absolute;
+  top: 4px;
+  right: 14px;
+  z-index: 6;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+.findbar-icon {
+  color: var(--text-lo);
+  font-size: 14px;
+}
+
+.findbar-input {
+  width: 220px;
+  height: 26px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-hi);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+.findbar-input::placeholder {
+  color: var(--text-lo);
+}
+
+.findbar-count {
+  min-width: 40px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-lo);
+  white-space: nowrap;
+}
+.findbar-count.is-none {
+  color: var(--accent-warm);
+}
+
+.findbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+  margin: 0 2px;
+}
+
+.findbar-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-lo);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    opacity 0.14s ease;
+}
+.findbar-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--gold-bright);
+}
+.findbar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.findbar-close:hover:not(:disabled) {
+  color: var(--accent-warm);
+}

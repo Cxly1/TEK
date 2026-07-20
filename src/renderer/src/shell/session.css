@@ -1,0 +1,87 @@
+.resume-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(70% 60% at 50% 45%, #0a0b0d 0%, var(--bg-void) 75%);
+}
+
+.resume-card {
+  width: min(420px, 86vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 40px 32px 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.6);
+}
+.resume-mark {
+  font-size: 32px;
+  line-height: 1;
+  color: var(--gold);
+  opacity: 0.85;
+  margin-bottom: 4px;
+}
+.resume-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-hi);
+  letter-spacing: -0.01em;
+}
+.resume-sub {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-lo);
+}
+.resume-count {
+  color: var(--gold-bright);
+  opacity: 0.8;
+}
+
+.resume-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  width: 100%;
+}
+.resume-btn {
+  flex: 1;
+  height: 40px;
+  border-radius: 10px;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.resume-yes {
+  border: 1px solid rgba(244, 213, 138, 0.5);
+  background: rgba(227, 179, 65, 0.08);
+  color: var(--gold-bright);
+}
+.resume-yes:hover {
+  border-color: var(--gold-bright);
+  background: rgba(227, 179, 65, 0.16);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+.resume-no {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-lo);
+}
+.resume-no:hover {
+  border-color: #3a4046;
+  color: var(--text-hi);
+}

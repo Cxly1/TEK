@@ -1,0 +1,1022 @@
+.shell {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-void);
+}
+
+/* ----------------------------------------------------------------------------
+   TopBar — dos filas (pestanas + navegacion). Mas clara que la pagina para
+   separarse bien y que la info se lea.
+---------------------------------------------------------------------------- */
+/* Altura por contenido: con fila de navegacion = 80px (= TOPBAR_HEIGHT del main);
+   en la nueva pestana la fila 2 no se renderiza y la barra se encoge a 38px. */
+.topbar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #1a1d21;
+  border-bottom: 1px solid #2a2e34;
+}
+
+/* Barra de carga indeterminada: un segmento dorado que barre la costura inferior
+   de la barra mientras la pestana activa carga. Anima por transform (GPU), asi
+   corre aunque Windows tenga las animaciones reducidas (como el borde dorado). */
+.load-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+}
+.load-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 35%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--gold), var(--gold-bright), transparent);
+  will-change: transform;
+  animation: load-sweep 1.05s ease-in-out infinite;
+}
+@keyframes load-sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+/* Fila 1: pestanas */
+.tb-tabs {
+  height: 38px;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 0 6px 0 10px;
+}
+.tb-tablist {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  /* Ocupa solo lo que necesita pero PUEDE encoger: cuando faltan pixeles, las
+     pestanas de dentro se compactan (flex-shrink) en vez de empujar nada fuera.
+     Quien rellena el hueco hasta los controles es .tb-spacer, no este contenedor. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+/* Relleno flexible entre el "+" y los controles de la derecha. Cede su espacio
+   primero (asi las pestanas no se aplastan hasta que de verdad hace falta) y
+   sirve de zona de arrastre de la ventana (hereda .drag del contenedor). */
+.tb-spacer {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 8px;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  max-width: 200px;
+  /* Minimo bajo para que muchas pestanas quepan compactandose (queda el favicon
+     + algo de titulo); el "+" y los controles nunca se las comen. */
+  min-width: 56px;
+  flex: 0 1 auto;
+  padding: 0 8px 0 11px;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--text-lo);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+.tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-hi);
+}
+.tab.is-active {
+  background: var(--bg-void);
+  color: var(--text-hi);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* Borde dorado animado — SOLO en la pestana activa.
+   Tecnica (estilo Aceternity "Moving Border"): un conico dorado gigante girando
+   por detras (transform: rotate, anima por GPU siempre), con la zona interior
+   tapada por ::after para que solo se vea el anillo de 1.6px del borde. */
+.tab.is-active::before {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  left: 50%;
+  top: 50%;
+  width: 280%;
+  aspect-ratio: 1;
+  /* Tonos mas apagados (sin picos casi blancos) + opacidad para bajar el brillo:
+     el anillo dorado se sigue moviendo pero ya no "quema". */
+  background: conic-gradient(
+    from 0deg,
+    #2e2008,
+    var(--gold),
+    var(--gold-bright),
+    var(--gold),
+    #2e2008,
+    var(--gold),
+    var(--gold-bright),
+    var(--gold),
+    #2e2008
+  );
+  opacity: 0.6;
+  animation: tek-spin 2.6s linear infinite;
+  pointer-events: none;
+}
+.tab.is-active::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 1.6px;
+  border-radius: 7px 7px 0 0;
+  background: var(--bg-void);
+  pointer-events: none;
+}
+@keyframes tek-spin {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+.tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Marca de la pestana: favicon del sitio (o punto de color como fallback). */
+.tab-lead {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.tab-favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+  display: block;
+}
+.tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-lo);
+  flex-shrink: 0;
+}
+.tab.is-active .tab-dot {
+  background: var(--gold);
+  box-shadow: 0 0 6px var(--gold-glow);
+}
+.tab-dot.is-loading {
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+  animation: tb-pulse 1s ease-in-out infinite;
+}
+.tab-close {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  font-size: 9px;
+  color: var(--text-lo);
+  flex-shrink: 0;
+  /* La X solo aparece al pasar el raton por la pestana o si esta activa. */
+  opacity: 0;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    opacity 0.14s ease;
+}
+.tab:hover .tab-close,
+.tab.is-active .tab-close {
+  opacity: 1;
+}
+.tab-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-hi);
+}
+
+/* --- Arrastre de pestanas (reordenar) ---
+   La pestana en vuelo se atenua; la costura donde caeria se marca con una
+   linea dorada. Va como background-image (no ::before/::after: esos ya los usa
+   el borde dorado animado de la pestana activa). */
+.tab.is-dragging {
+  opacity: 0.35;
+}
+.tab.drop-before,
+.tab.drop-after {
+  background-image: linear-gradient(var(--gold), var(--gold));
+  background-size: 2px 65%;
+  background-repeat: no-repeat;
+}
+.tab.drop-before {
+  background-position: 0 center;
+}
+.tab.drop-after {
+  background-position: 100% center;
+}
+/* Boton "nueva pestana": vive FUERA del tablist recortado, asi que SIEMPRE se ve.
+   Contorno dorado iluminado + halo que respira para distinguirlo de un vistazo
+   de las pestanas (que son planas). Se alinea con la base de las pestanas. */
+.tab-new {
+  align-self: flex-end;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--gold) 7%, transparent);
+  color: var(--gold);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow:
+    0 0 6px var(--gold-glow),
+    inset 0 0 5px color-mix(in srgb, var(--gold) 14%, transparent);
+  animation: plus-glow 2.8s ease-in-out infinite;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease,
+    transform 0.12s ease;
+}
+.tab-new:hover {
+  background: color-mix(in srgb, var(--gold) 18%, transparent);
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  box-shadow:
+    0 0 14px var(--gold),
+    inset 0 0 8px color-mix(in srgb, var(--gold) 30%, transparent);
+  transform: translateY(-1px);
+  animation: none;
+}
+.tab-new:active {
+  transform: translateY(0);
+}
+/* Respiracion del halo dorado: sutil, para que el "+" llame sin distraer.
+   Anima box-shadow/border (no layout), corre en GPU como el resto de dorados. */
+@keyframes plus-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 5px var(--gold-glow),
+      inset 0 0 5px color-mix(in srgb, var(--gold) 12%, transparent);
+    border-color: color-mix(in srgb, var(--gold) 48%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 12px var(--gold),
+      inset 0 0 7px color-mix(in srgb, var(--gold) 22%, transparent);
+    border-color: color-mix(in srgb, var(--gold) 80%, transparent);
+  }
+}
+
+/* Grupos por dominio: cada grupo lleva su color (--g) inyectado inline. */
+.tab-group {
+  display: flex;
+  align-items: flex-end;
+  align-self: flex-end;
+  gap: 3px;
+  /* Para que el grupo tambien pueda compactarse cuando faltan pixeles. */
+  min-width: 0;
+}
+.tab-group.is-grouped {
+  padding: 0 4px;
+  border-radius: 9px 9px 0 0;
+  background: color-mix(in srgb, var(--g) 12%, transparent);
+  box-shadow: inset 0 -2px 0 var(--g);
+}
+/* Etiqueta del grupo = "rama central": clic para plegar/desplegar. */
+.tab-group-label {
+  align-self: flex-end;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--g);
+  border-radius: 7px 7px 0 0;
+  transition: background 0.14s ease;
+}
+.tab-group-label:hover {
+  background: color-mix(in srgb, var(--g) 18%, transparent);
+}
+.tab-group-name {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  /* "Shiny text": una banda mas clara del color del grupo barre las letras —
+     hermano del borde dorado. Anima un gradiente recortado al texto (no usa
+     @property, asi que corre aunque Windows tenga las animaciones reducidas). */
+  background-image: linear-gradient(
+    100deg,
+    var(--g) 0%,
+    var(--g) 40%,
+    color-mix(in srgb, var(--g) 38%, #ffffff) 50%,
+    var(--g) 60%,
+    var(--g) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: group-shine 3.4s linear infinite;
+}
+@keyframes group-shine {
+  0% {
+    background-position: 130% 0;
+  }
+  100% {
+    background-position: -130% 0;
+  }
+}
+.tab-group-caret {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.85;
+  transition: transform 0.18s ease;
+}
+.tab-group-caret.is-closed {
+  transform: rotate(-90deg);
+}
+.tab-group-count {
+  display: grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--g) 30%, transparent);
+  color: var(--text-hi);
+  font-size: 9.5px;
+}
+/* Grupo plegado: la rama central marca si la pestana activa esta dentro. */
+.tab-group.is-collapsed {
+  padding: 0;
+}
+.tab-group.is-collapsed .tab-group-label.has-active {
+  background: color-mix(in srgb, var(--g) 22%, transparent);
+  box-shadow: inset 0 -2px 0 var(--g);
+}
+/* El punto de cada pestana toma el color de su dominio (salvo la activa). */
+.tab-group .tab:not(.is-active) .tab-dot {
+  background: var(--g);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--g) 45%, transparent);
+}
+
+/* Boton de audio por pestana (altavoz con ondas / tachado). */
+.tab-mute {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  color: var(--text-lo);
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+.tab-mute:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-hi);
+}
+.tab-mute.is-audible {
+  color: var(--gold);
+}
+.tab-mute.is-audible:hover {
+  color: var(--gold-bright);
+}
+.tab-mute.is-muted {
+  color: var(--text-lo);
+  opacity: 0.8;
+}
+.tab-mute .wave {
+  transform-origin: 13px 12px;
+  animation: tek-wave 1.6s ease-in-out infinite;
+}
+.tab-mute .wave-2 {
+  animation-delay: 0.2s;
+}
+@keyframes tek-wave {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Pestana que esta ahora mismo en el mini-player: su marca es el icono PiP
+   dorado (en vez del favicon) + un tinte calido sutil para ubicarla de un vistazo. */
+.tab-pip {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--gold);
+  flex-shrink: 0;
+}
+.tab.is-pip:not(.is-active) {
+  background: var(--gold-glow);
+  color: var(--text-hi);
+}
+
+/* Acceso al panel "lo que TEK sabe de ti" (movido aqui desde la nueva pestana). */
+.tb-brain {
+  align-self: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-lo);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 7px;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.tb-brain:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--gold-bright);
+}
+
+/* Herramientas de la barra (historial, descargas) — junto al ✦ */
+.tb-tool {
+  position: relative;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-lo);
+  cursor: pointer;
+  border-radius: 7px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.tb-tool:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--gold-bright);
+}
+.tb-tool.is-busy {
+  color: var(--gold);
+}
+.tb-tool-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #0a0a0b;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Controles de ventana */
+.tb-win {
+  display: flex;
+  gap: 2px;
+  align-self: stretch;
+  align-items: center;
+  flex-shrink: 0;
+}
+.tb-wbtn {
+  width: 34px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-lo);
+  font-size: 11px;
+  cursor: pointer;
+}
+.tb-wbtn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-hi);
+}
+.tb-close:hover {
+  background: #e23b2e;
+  color: #fff;
+}
+
+/* Fila 2: navegacion */
+.tb-nav {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+}
+/* Navegacion auto-oculta (estilo Zen): invisible en reposo —pero conserva su
+   sitio, sin saltos— y aparece al pasar el raton por la fila o al enfocar. */
+.tb-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.tb-nav:hover .tb-actions,
+.tb-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tb-icon {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-hi);
+  font-size: 17px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.tb-icon:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--gold-bright);
+}
+.tb-icon:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.tb-host {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid #30353c;
+  border-radius: 999px;
+  background: #0f1114;
+  color: var(--text-hi);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: text;
+  transition: border-color 0.2s ease;
+}
+.tb-host:hover {
+  border-color: rgba(244, 213, 138, 0.45);
+}
+.tb-host-text {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tb-host .tb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-lo);
+}
+.tb-host .tb-dot.is-loading {
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+  animation: tb-pulse 1s ease-in-out infinite;
+}
+.tb-host .tb-k {
+  font-size: 11px;
+  color: var(--text-lo);
+  border: 1px solid #30353c;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+@keyframes tb-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Lienzo de pestana nueva / vacia */
+.shell-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.newtab {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+  background: radial-gradient(78% 58% at 50% 40%, #0c0d10 0%, var(--bg-void) 72%);
+}
+/* El lienzo recibe el foco (programatico) para navegar con teclado; sin marco. */
+.newtab:focus,
+.newtab:focus-visible {
+  outline: none;
+}
+/* Reloj + saludo: punto focal sereno (sustituye al ⊕). */
+.newtab-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.clock-time {
+  font-family: var(--font-mono);
+  font-size: 44px;
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--text-hi);
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+.clock-greet {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+  opacity: 0.85;
+}
+
+/* La barra de busqueda: parece un input, es un boton que abre el palette. */
+.newtab-search {
+  width: min(560px, 84vw);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px;
+  border: 1px solid #2c3138;
+  border-radius: 14px;
+  background: #0f1114;
+  color: var(--text-hi);
+  font-family: var(--font-mono);
+  font-size: 14.5px;
+  cursor: text;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.12s ease;
+}
+.newtab-search:hover {
+  border-color: rgba(244, 213, 138, 0.55);
+  box-shadow:
+    0 12px 44px rgba(0, 0, 0, 0.45),
+    0 0 0 3px var(--gold-glow);
+}
+.newtab-search:active {
+  transform: translateY(1px);
+}
+.newtab-search-cmd {
+  color: var(--gold);
+  opacity: 0.85;
+}
+.newtab-search-text {
+  flex: 1;
+  text-align: left;
+  color: var(--text-lo);
+}
+.newtab-search-k {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-lo);
+  border: 1px solid #30353c;
+  border-radius: 6px;
+  padding: 3px 7px;
+}
+
+.newtab-hint {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-lo);
+  opacity: 0.7;
+}
+
+/* Chips de busqueda rapida: precargan el palette con su atajo. */
+.newtab-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-lo);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease,
+    background 0.16s ease;
+}
+.chip:hover {
+  border-color: rgba(244, 213, 138, 0.45);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-hi);
+}
+.chip-icon {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-lo);
+}
+.chip:hover .chip-icon {
+  color: var(--gold-bright);
+}
+
+/* --- Cerebro de TEK en la nueva pestana --------------------------------- */
+
+/* Tarjeta "continuar escuchando": lo ultimo que sono. */
+/* "Continuar escuchando" sin caja: una linea simple (eq + titulo + play). */
+.music-card {
+  width: min(560px, 84vw);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-hi);
+  cursor: pointer;
+  text-align: left;
+  opacity: 0.82;
+  transition:
+    background 0.16s ease,
+    opacity 0.16s ease,
+    transform 0.12s ease;
+}
+.music-card:hover {
+  background: rgba(255, 255, 255, 0.03);
+  opacity: 1;
+}
+.music-card:active {
+  transform: translateY(1px);
+}
+.music-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 18px;
+}
+.music-eq i {
+  width: 3px;
+  background: var(--gold);
+  border-radius: 2px;
+  animation: eq 1s ease-in-out infinite;
+}
+.music-eq i:nth-child(1) {
+  height: 8px;
+  animation-delay: -0.2s;
+}
+.music-eq i:nth-child(2) {
+  height: 16px;
+  animation-delay: -0.5s;
+}
+.music-eq i:nth-child(3) {
+  height: 11px;
+}
+@keyframes eq {
+  50% {
+    transform: scaleY(0.4);
+  }
+}
+.music-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  overflow: hidden;
+}
+.music-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold);
+  opacity: 0.85;
+}
+.music-title {
+  font-size: 13.5px;
+  color: var(--text-hi);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.music-play {
+  color: var(--text-lo);
+  font-size: 13px;
+}
+.music-card:hover .music-play {
+  color: var(--gold-bright);
+}
+
+/* Rejilla de sitios sugeridos (frecency + franja horaria). */
+.sug-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  width: min(560px, 84vw);
+}
+@media (max-width: 540px) {
+  .sug-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+/* Minimalista: sin tarjeta ni chip de fondo. Solo el favicon y el nombre.
+   El unico "recuadro" es un hover muy sutil para indicar que se puede clicar. */
+.sug-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 8px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    transform 0.12s ease;
+}
+.sug-tile:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.sug-tile:active {
+  transform: translateY(1px);
+}
+.sug-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  transition: transform 0.16s ease;
+}
+.sug-tile:hover .sug-icon {
+  transform: scale(1.08);
+}
+.sug-favicon {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  border-radius: 9px;
+  display: block;
+}
+/* Fallback de inicial: SOLO este caso lleva un chip teñido (si no, quedaria suelto). */
+.sug-icon:has(.sug-glyph-text) {
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--c) 18%, #15171b);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.sug-glyph-text {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--c) 80%, #ffffff);
+}
+.sug-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-lo);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sug-tile:hover .sug-name {
+  color: var(--text-hi);
+}
+
+/* --- Radar de servers locales (nueva pestana) ----------------------------- */
+
+.dev-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.dev-card-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+}
+.dev-card-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.dev-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 224, 165, 0.28);
+  background: rgba(126, 224, 165, 0.05);
+  color: var(--text-hi);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dev-chip:hover {
+  border-color: rgba(126, 224, 165, 0.55);
+  background: rgba(126, 224, 165, 0.1);
+}
+.dev-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7ee0a5;
+  box-shadow: 0 0 8px rgba(126, 224, 165, 0.7);
+}
+.dev-chip-port {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #7ee0a5;
+}
+.dev-chip-title {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-lo);
+}
+
