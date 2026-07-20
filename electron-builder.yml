@@ -18,6 +18,12 @@ asarUnpack:
 # El runtime es el fork de castlabs (Widevine). Su version viene de un tag de
 # GitHub, que electron-builder no sabe leer del package.json: se la damos aqui.
 electronVersion: 37.10.3
+# CLAVE: sin esto electron-builder se baja el Electron OFICIAL de esa version
+# (sin Widevine) y el instalador sale sin DRM aunque en `pnpm dev` funcione.
+# Empaquetamos el runtime de castlabs que ya esta instalado en node_modules.
+electronDist: node_modules/electron/dist
+# Y el paquete resultante hay que volver a firmarlo con VMP (ver el hook).
+afterPack: build/afterPack.cjs
 # El binario nativo ya se compila con `pnpm run rebuild` (ABI de Electron).
 # Dejar que electron-builder lo reconstruya lo rompe con pnpm.
 npmRebuild: false
