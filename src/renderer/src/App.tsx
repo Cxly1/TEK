@@ -71,7 +71,12 @@ export function App(): React.JSX.Element {
       window.tek.auto.onToast((t) => useTek.getState().setRecipeToast(t)),
       window.tek.auto.onRecState((rec) => useTek.getState().setRecording(rec)),
       window.tek.passwords.onOffer((o) => useTek.getState().setPwOffer(o)),
-      window.tek.passwords.onFillAvailable((f) => useTek.getState().setFillAvail(f))
+      // Sin credenciales = "retira el aviso" (la pagina ya no tiene login).
+      window.tek.passwords.onFillAvailable((f) => {
+        const st = useTek.getState()
+        if (f.creds.length > 0) st.setFillAvail(f)
+        else if (st.fillAvail?.tabId === f.tabId) st.setFillAvail(null)
+      })
     ]
     return () => offs.forEach((off) => off())
   }, [])

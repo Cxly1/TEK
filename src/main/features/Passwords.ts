@@ -1,14 +1,21 @@
 import { safeStorage } from 'electron'
-import { randomUUID } from 'node:crypto'
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync } from 'node:crypto'
 import { hostKey, type PasswordMeta, type PasswordOffer, type PwDecision, type PwStatus } from '@shared/ipc'
 import { JsonStore } from './dev/jsonStore'
 
 /**
  * Gestor de contrasenas de TEK. Reglas de seguridad (no negociables):
  *
- *  - Cada contrasena se cifra con `safeStorage` (DPAPI en Windows: atada a TU
- *    cuenta de usuario, el mismo esquema que usa Chrome). En disco JAMAS hay
- *    texto plano; si el cifrado del sistema no esta disponible, NO se guarda.
+ *  - Cada contrasena se cifra con `safeStorage` (cifrado del sistema, atado a TU
+ *    cuenta de usuario). En disco JAMAS hay texto plano; si el cifrado del
+ *    sistema no esta disponible, NO se guarda.
+ *  - CAPA OPCIONAL: contrasena maestra. El cifrado del sistema protege el
+ *    ARCHIVO (disco robado, otra cuenta del mismo equipo), pero descifra solo
+ *    para cualquier programa que ya corra como tu — ese es el techo de todos los
+ *    navegadores. Con contrasena maestra cada secreto va ademas en AES-256-GCM
+ *    con una clave derivada por scrypt de algo que solo esta en tu cabeza: leer
+ *    el archivo deja de bastar. La clave vive en memoria del proceso principal y
+ *    se tira sola por inactividad.
  *  - El host de una credencial se deriva en el MAIN del webContents que capturo
  *    el submit — nunca de datos que mande la pagina (una web no puede hacerse
  *    pasar por otra).
@@ -22,16 +29,26 @@ interface VaultEntry {
   id: string
   host: string
   username: string
-  /** Contrasena cifrada por safeStorage, en base64. */
+  /** Contrasena cifrada. Con `v2:` delante = lleva ademas la capa maestra. */
   secret: string
   createdAt: number
   updatedAt: number
+}
+
+/** Parametros de derivacion de la clave maestra (scrypt). */
+interface KdfParams {
+  salt: string
+  N: number
+  r: number
+  p: number
 }
 
 interface VaultData {
   entries: VaultEntry[]
   /** Hosts donde el usuario pidio NO volver a ofrecer guardar. */
   never: string[]
+  /** null = sin contrasena maestra (solo cifrado del sistema). */
+  kdf: KdfParams | null
 }
 
 interface PendingOffer {
@@ -43,10 +60,23 @@ interface PendingOffer {
 
 /** Una oferta sin decidir caduca a los 2 minutos (se borra de memoria). */
 const OFFER_TTL_MS = 2 * 60_000
+/** La boveda se vuelve a bloquear sola tras este rato sin usarla. */
+const AUTOLOCK_MS = 15 * 60_000
+/** Coste de scrypt: ~100ms por intento, que es lo que encarece la fuerza bruta. */
+const SCRYPT: Omit<KdfParams, 'salt'> = { N: 32768, r: 8, p: 1 }
+/** Marca de los secretos que llevan la capa de contrasena maestra. */
+const V2 = 'v2:'
 
 export class Passwords {
-  private readonly store = new JsonStore<VaultData>('tek-vault.json', { entries: [], never: [] })
+  private readonly store = new JsonStore<VaultData>('tek-vault.json', {
+    entries: [],
+    never: [],
+    kdf: null
+  })
   private readonly pending = new Map<string, PendingOffer>()
+  /** Clave maestra derivada. SOLO en memoria, nunca a disco. */
+  private key: Buffer | null = null
+  private lockTimer: NodeJS.Timeout | null = null
   /** El renderer muestra el toast "¿guardar contraseña?". */
   onOffer: ((o: PasswordOffer) => void) | null = null
 
@@ -58,11 +88,23 @@ export class Passwords {
     }
   }
 
+  /** ¿Hay contrasena maestra configurada? */
+  private isProtected(): boolean {
+    return this.store.data.kdf !== null
+  }
+
+  /** Protegida pero sin desbloquear: no se puede leer ni guardar nada. */
+  private isLocked(): boolean {
+    return this.isProtected() && this.key === null
+  }
+
   status(): PwStatus {
     return {
       available: this.available(),
       count: this.store.data.entries.length,
-      never: [...this.store.data.never].sort()
+      never: [...this.store.data.never].sort(),
+      protected: this.isProtected(),
+      locked: this.isLocked()
     }
   }
 
@@ -80,8 +122,45 @@ export class Passwords {
       .map((e) => ({ id: e.id, username: e.username }))
   }
 
+  // --- Capa maestra ---------------------------------------------------------
+
+  private derive(password: string, kdf: KdfParams): Buffer {
+    // maxmem hay que subirlo a mano: por defecto Node no llega a N=32768.
+    return scryptSync(password, Buffer.from(kdf.salt, 'base64'), 32, {
+      N: kdf.N,
+      r: kdf.r,
+      p: kdf.p,
+      maxmem: 256 * 1024 * 1024
+    })
+  }
+
+  /** AES-256-GCM -> base64(iv | tag | ciphertext). */
+  private seal(plain: string, key: Buffer): string {
+    const iv = randomBytes(12)
+    const c = createCipheriv('aes-256-gcm', key, iv)
+    const body = Buffer.concat([c.update(plain, 'utf8'), c.final()])
+    return Buffer.concat([iv, c.getAuthTag(), body]).toString('base64')
+  }
+
+  /** Devuelve null si la clave no es la buena (el tag GCM no cuadra). */
+  private open(blob: string, key: Buffer): string | null {
+    try {
+      const raw = Buffer.from(blob, 'base64')
+      const d = createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12))
+      d.setAuthTag(raw.subarray(12, 28))
+      return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString('utf8')
+    } catch {
+      return null
+    }
+  }
+
+  // --- Cifrado de un secreto (sistema + capa maestra si la hay) -------------
+
   private encrypt(password: string): string | null {
     try {
+      if (this.key) {
+        return V2 + safeStorage.encryptString(this.seal(password, this.key)).toString('base64')
+      }
       return safeStorage.encryptString(password).toString('base64')
     } catch {
       return null
@@ -90,24 +169,132 @@ export class Passwords {
 
   private decrypt(secret: string): string | null {
     try {
+      if (secret.startsWith(V2)) {
+        if (!this.key) return null // boveda bloqueada
+        const inner = safeStorage.decryptString(Buffer.from(secret.slice(V2.length), 'base64'))
+        return this.open(inner, this.key)
+      }
       return safeStorage.decryptString(Buffer.from(secret, 'base64'))
     } catch {
       return null
     }
   }
 
+  /** Cada uso legitimo aplaza el bloqueo automatico. */
+  private touch(): void {
+    if (!this.isProtected() || !this.key) return
+    if (this.lockTimer) clearTimeout(this.lockTimer)
+    this.lockTimer = setTimeout(() => this.lock(), AUTOLOCK_MS)
+  }
+
+  /** Desbloquea con la contrasena maestra. La prueba es el propio tag GCM. */
+  unlock(password: string): boolean {
+    const kdf = this.store.data.kdf
+    if (!kdf) return true // no hay nada que desbloquear
+    const key = this.derive(password, kdf)
+    const first = this.store.data.entries.find((e) => e.secret.startsWith(V2))
+    if (first) {
+      const inner = (() => {
+        try {
+          return safeStorage.decryptString(Buffer.from(first.secret.slice(V2.length), 'base64'))
+        } catch {
+          return null
+        }
+      })()
+      if (inner === null || this.open(inner, key) === null) return false
+    }
+    this.key = key
+    this.touch()
+    return true
+  }
+
+  /** Tira la clave de memoria (manual, por inactividad o al cerrar). */
+  lock(): void {
+    if (this.lockTimer) {
+      clearTimeout(this.lockTimer)
+      this.lockTimer = null
+    }
+    this.key?.fill(0)
+    this.key = null
+  }
+
+  /**
+   * Pone, cambia o quita la contrasena maestra, re-cifrando TODA la boveda.
+   * Con `next = null` la quita (los secretos vuelven a solo cifrado del sistema).
+   * Si ya estaba protegida hay que estar desbloqueado o dar la actual.
+   */
+  setMaster(next: string | null, current?: string): { ok: boolean; error?: string } {
+    if (!this.available()) return { ok: false, error: 'sin cifrado del sistema' }
+
+    if (this.isProtected()) {
+      if (this.key === null) {
+        if (!current || !this.unlock(current)) return { ok: false, error: 'contraseña actual incorrecta' }
+      } else if (current !== undefined && current !== '' && !this.verifyCurrent(current)) {
+        return { ok: false, error: 'contraseña actual incorrecta' }
+      }
+    }
+    if (next !== null && next.length < 8) return { ok: false, error: 'mínimo 8 caracteres' }
+
+    // Descifra TODO con el estado actual antes de tocar nada: si algo falla, la
+    // boveda se queda como estaba en vez de a medio convertir.
+    const plain: { entry: VaultEntry; password: string }[] = []
+    for (const entry of this.store.data.entries) {
+      const password = this.decrypt(entry.secret)
+      if (password === null) return { ok: false, error: 'no se pudo descifrar la bóveda' }
+      plain.push({ entry, password })
+    }
+
+    const previous = this.key
+    if (next === null) {
+      this.key = null
+      this.store.data.kdf = null
+    } else {
+      const kdf: KdfParams = { salt: randomBytes(16).toString('base64'), ...SCRYPT }
+      this.key = this.derive(next, kdf)
+      this.store.data.kdf = kdf
+    }
+
+    for (const { entry, password } of plain) {
+      const secret = this.encrypt(password)
+      if (secret === null) {
+        // Vuelta atras: ni un secreto se queda ilegible.
+        this.key = previous
+        return { ok: false, error: 'no se pudo re-cifrar la bóveda' }
+      }
+      entry.secret = secret
+      entry.updatedAt = Date.now()
+    }
+    previous?.fill(0)
+    this.store.flush()
+    this.touch()
+    return { ok: true }
+  }
+
+  /** ¿`password` es la maestra actual? (sin cambiar el estado de bloqueo). */
+  private verifyCurrent(password: string): boolean {
+    const kdf = this.store.data.kdf
+    if (!kdf || !this.key) return false
+    return this.derive(password, kdf).equals(this.key)
+  }
+
   /** Descifra UNA contrasena (boton "ver" del panel / relleno). */
   reveal(id: string): string | null {
+    if (this.isLocked()) return null
     const e = this.store.data.entries.find((x) => x.id === id)
-    return e ? this.decrypt(e.secret) : null
+    if (!e) return null
+    this.touch()
+    return this.decrypt(e.secret)
   }
 
   /** Credencial completa para rellenar. El que llama DEBE verificar el host. */
   credFor(id: string): { host: string; username: string; password: string } | null {
+    if (this.isLocked()) return null
     const e = this.store.data.entries.find((x) => x.id === id)
     if (!e) return null
     const password = this.decrypt(e.secret)
-    return password === null ? null : { host: e.host, username: e.username, password }
+    if (password === null) return null
+    this.touch()
+    return { host: e.host, username: e.username, password }
   }
 
   remove(id: string): void {
@@ -126,7 +313,8 @@ export class Passwords {
    * pendiente y avisa al renderer (SIN la contrasena).
    */
   handleCaptured(sender: Electron.WebContents, raw: unknown): void {
-    if (!this.available() || !raw || typeof raw !== 'object') return
+    // Bloqueada: ni ofrecemos, porque no podriamos guardar aunque dijera que si.
+    if (!this.available() || this.isLocked() || !raw || typeof raw !== 'object') return
     if (sender.isDestroyed()) return
     const host = hostKey(sender.getURL())
     if (!host || this.store.data.never.includes(host)) return
@@ -185,6 +373,7 @@ export class Passwords {
       })
     }
     this.store.flush()
+    this.touch()
   }
 
   private gcPending(): void {
@@ -195,6 +384,7 @@ export class Passwords {
   dispose(): void {
     this.pending.clear()
     this.onOffer = null
+    this.lock()
     this.store.dispose()
   }
 }

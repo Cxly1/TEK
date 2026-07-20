@@ -730,6 +730,12 @@ export class ViewManager {
     return tab ? this.liveWc(tab) : null
   }
 
+  /** Camino inverso: de que pestana es este webContents (por su id de Electron). */
+  tabIdOfWcId(wcId: number): string | null {
+    const tab = this.tabs.find((t) => this.liveWc(t)?.id === wcId)
+    return tab?.id ?? null
+  }
+
   /** webContents VIVO de la pestana activa con pagina (o null). */
   activeWc(): Electron.WebContents | null {
     const a = this.active

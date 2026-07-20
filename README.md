@@ -48,7 +48,10 @@ repetirlo cuando quieras desde **☰ → Repetir tutorial**.
 - Adblock con el motor de [Ghostery](https://github.com/ghostery/adblocker) (linaje uBlock
   Origin / Brave), *offline-first*: funciona sin red desde el primer arranque.
 - Permisos de sitio **denegados por defecto** (cámara, micro, ubicación…) con diálogo propio.
-- Gestor de contraseñas cifrado con el cifrado del sistema operativo (DPAPI en Windows).
+- Gestor de contraseñas con **doble cifrado**: el del propio sistema operativo y, si la
+  activas, una **contraseña maestra** que solo tú conoces. En disco jamás hay texto plano, el
+  relleno exige un clic tuyo y host exacto, y el aviso solo sale si la página tiene de verdad
+  un campo donde escribir.
 - Borrado de cookies/caché/almacenamiento, global o por sitio.
 
 **Extras**
@@ -91,7 +94,7 @@ ni sincronización:
 | `tek-profile.json` | Tu nombre y si ya viste el tutorial |
 | `tek-brain.db` | Historial, visitas, rutinas (el "Cerebro") |
 | `tek-tabs.json` | La sesión de pestañas para reanudarla |
-| `tek-passwords.json` | Contraseñas, **cifradas** por el sistema |
+| `tek-vault.json` | Contraseñas, **cifradas** (nunca en texto plano) |
 | `tek-downloads.json` | Historial de descargas |
 | `favicons.json` | Iconos de los sitios, cacheados |
 

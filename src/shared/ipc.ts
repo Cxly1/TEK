@@ -129,6 +129,10 @@ export const IPC = {
   pwRemoveNever: 'pw:removeNever',
   pwDecision: 'pw:decision',
   pwFill: 'pw:fill',
+  // Contrasena maestra (capa opcional sobre el cifrado del sistema)
+  pwSetMaster: 'pw:setMaster',
+  pwUnlock: 'pw:unlock',
+  pwLock: 'pw:lock',
 
   // Mini-player (Picture-in-Picture): ver un video mientras navegas en otra pestana
   pipEnter: 'pip:enter',
@@ -175,6 +179,9 @@ export const WV = {
   pwCaptured: 'wv:pwCaptured',
   /** El main manda credenciales a rellenar (solo tras clic del usuario). */
   pwFillCreds: 'wv:pwFillCreds',
+  /** El preload avisa si la pagina tiene (o deja de tener) un campo de login
+   *  visible. Sin esto, TEK ofrecia rellenar en paginas sin ningun formulario. */
+  pwFormPresent: 'wv:pwFormPresent',
   /** El preload reporta un paso de macro mientras se graba. */
   macroEvent: 'wv:macroEvent',
   /** El main enciende/apaga el modo grabacion en la pagina. */
@@ -516,11 +523,22 @@ export interface PasswordMeta {
 
 /** Estado del vault. */
 export interface PwStatus {
-  /** El cifrado del sistema (DPAPI) esta disponible; sin el NO se guarda nada. */
+  /** El cifrado del sistema esta disponible; sin el NO se guarda nada. */
   available: boolean
   count: number
   /** Hosts donde el usuario pidio no volver a ofrecer guardar. */
   never: string[]
+  /** Hay contrasena maestra configurada (capa extra sobre la del sistema). */
+  protected: boolean
+  /** Protegida y sin desbloquear: no se puede leer ni guardar nada. */
+  locked: boolean
+}
+
+/** Resultado de poner/cambiar/quitar la contrasena maestra. */
+export interface PwMasterResult {
+  ok: boolean
+  /** Motivo legible si `ok` es false. */
+  error?: string
 }
 
 /** Oferta de guardar una credencial recien capturada (sin la contrasena). */
@@ -770,6 +788,13 @@ export interface TekApi {
     decision(offerId: string, action: PwDecision): Promise<void>
     /** Rellena una credencial en una pestana (solo tras clic del usuario). */
     fill(tabId: string, credId: string): Promise<boolean>
+    /** Pone, cambia (`current`) o quita (`next` = null) la contrasena maestra.
+     *  Re-cifra toda la boveda; o se hace entera o se queda como estaba. */
+    setMaster(next: string | null, current?: string): Promise<PwMasterResult>
+    /** Desbloquea la boveda para esta sesion. false = contrasena incorrecta. */
+    unlock(password: string): Promise<boolean>
+    /** Vuelve a bloquearla ya (tambien se bloquea sola por inactividad). */
+    lock(): Promise<void>
     onOffer(cb: (o: PasswordOffer) => void): () => void
     onFillAvailable(cb: (f: FillAvailable) => void): () => void
   }

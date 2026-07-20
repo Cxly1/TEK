@@ -262,12 +262,11 @@ function wireAutomation(v: ViewManager): void {
     automation!.onVisit(host)
     macros!.handleNavigate(wc.id, url)
   }
-  v.onDomReady = (tabId, wc) => {
-    const host = hostKey(wc.getURL())
-    scripts!.applyTo(wc, host)
-    // Hay credenciales guardadas para este sitio: avisa (relleno SOLO con clic).
-    const creds = passwords!.metasFor(host)
-    if (creds.length > 0) sendToShell(IPC.pwFillAvailable, { tabId, host, creds })
+  v.onDomReady = (_tabId, wc) => {
+    scripts!.applyTo(wc, hostKey(wc.getURL()))
+    // El aviso de "hay credenciales guardadas" NO se dispara aqui: solo tiene
+    // sentido si la pagina tiene de verdad un campo de login (lo dice el preload
+    // en WV.pwFormPresent). Antes salia en cualquier pagina del sitio.
   }
   v.shouldAutoDevtools = (host) =>
     isLocalHost(host) && (settings?.get().autoDevtoolsLocalhost ?? false)
@@ -485,6 +484,17 @@ function registerIpc(): void {
     return true
   })
 
+  // Contrasena maestra de la boveda (solo el shell)
+  ipcMain.handle(IPC.pwSetMaster, (e, next: string | null, current?: string) =>
+    fromShell(e) ? passwords?.setMaster(next, current) ?? { ok: false } : { ok: false }
+  )
+  ipcMain.handle(IPC.pwUnlock, (e, password: string) =>
+    fromShell(e) ? passwords?.unlock(password) ?? false : false
+  )
+  ipcMain.handle(IPC.pwLock, (e) => {
+    if (fromShell(e)) passwords?.lock()
+  })
+
   // Permisos de sitio (solo el shell consulta/revoca)
   ipcMain.handle(IPC.permsList, (e) => (fromShell(e) ? permissions?.list() ?? [] : []))
   ipcMain.handle(IPC.permsRevoke, (e, host: string, permission: string) => {
@@ -501,6 +511,17 @@ function registerIpc(): void {
 
   // Canales del preload de las webviews (vienen de las PAGINAS: validar fuerte).
   ipcMain.on(WV.pwCaptured, (e, payload: unknown) => passwords?.handleCaptured(e.sender, payload))
+  // La pagina gano o perdio un campo de login visible. Solo entonces ofrecemos
+  // rellenar; con `creds: []` el renderer retira el aviso. El host lo sacamos
+  // del webContents, no de lo que diga la pagina.
+  ipcMain.on(WV.pwFormPresent, (e, present: unknown) => {
+    if (!views || !passwords || e.sender.isDestroyed()) return
+    const tabId = views.tabIdOfWcId(e.sender.id)
+    if (!tabId) return
+    const host = hostKey(e.sender.getURL())
+    const creds = present === true && !passwords.status().locked ? passwords.metasFor(host) : []
+    sendToShell(IPC.pwFillAvailable, { tabId, host, creds })
+  })
   ipcMain.on(WV.macroEvent, (e, step: unknown) => macros?.handleEvent(e.sender, step))
   ipcMain.handle(WV.macroIsRecording, (e) => macros?.isRecordingWc(e.sender.id) ?? false)
 }

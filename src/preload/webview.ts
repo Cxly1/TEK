@@ -77,6 +77,7 @@ ipcRenderer.on(LUPA_RESET, () => {
 // Canales espejo de WV en src/shared/ipc.ts (inline: preload autocontenido).
 const PW_CAPTURED = 'wv:pwCaptured'
 const PW_FILL = 'wv:pwFillCreds'
+const PW_FORM = 'wv:pwFormPresent'
 
 // contextIsolation:false comparte el realm con la pagina (lo necesitamos para
 // podar los anuncios de YouTube/Spotify, que viven en el MAIN world). Como este
@@ -175,6 +176,53 @@ ipcRenderer.on(PW_FILL, (_e, creds: { username: string; password: string }) => {
   }
   setFieldValue(pw, creds.password)
   pw.focus()
+})
+
+/**
+ * ¿Hay AHORA MISMO un campo de contrasena visible donde tenga sentido rellenar?
+ * Sin esto TEK ofrecia "credenciales guardadas" en CUALQUIER pagina del sitio
+ * (leyendo un video de YouTube, por ejemplo), donde no habia nada que rellenar.
+ * Miramos que exista, que no este oculto y que tenga tamano real en pantalla.
+ */
+function hasLoginField(): boolean {
+  const fields = Array.from(document.querySelectorAll<HTMLInputElement>('input[type=password]'))
+  for (const el of fields) {
+    if (el.disabled || el.readOnly) continue
+    const r = el.getBoundingClientRect()
+    if (r.width < 8 || r.height < 8) continue // los honeypots miden 0
+    const st = getComputedStyle(el)
+    if (st.visibility === 'hidden' || st.display === 'none' || Number(st.opacity) === 0) continue
+    return true
+  }
+  return false
+}
+
+// Avisamos al main SOLO cuando el estado cambia. Los logins de SPA aparecen
+// despues de cargar (y desaparecen al entrar), asi que hay que vigilar el DOM;
+// el observer va con throttle porque en sitios pesados el DOM muta sin parar.
+let loginFieldSeen: boolean | null = null
+function reportLoginField(): void {
+  const now = hasLoginField()
+  if (now === loginFieldSeen) return
+  loginFieldSeen = now
+  ipcRenderer.send(PW_FORM, now)
+}
+
+let formScanTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleLoginScan(): void {
+  if (formScanTimer) return
+  formScanTimer = setTimeout(() => {
+    formScanTimer = null
+    reportLoginField()
+  }, 400)
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  reportLoginField()
+  new MutationObserver(scheduleLoginScan).observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  })
 })
 
 // --- Macros: grabacion de clics/teclas (solo con el modo encendido) ----------

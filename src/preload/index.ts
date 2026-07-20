@@ -144,6 +144,9 @@ const api: TekApi = {
     removeNever: (host) => ipcRenderer.invoke(IPC.pwRemoveNever, host),
     decision: (offerId, action) => ipcRenderer.invoke(IPC.pwDecision, offerId, action),
     fill: (tabId, credId) => ipcRenderer.invoke(IPC.pwFill, tabId, credId),
+    setMaster: (next, current) => ipcRenderer.invoke(IPC.pwSetMaster, next, current),
+    unlock: (password) => ipcRenderer.invoke(IPC.pwUnlock, password),
+    lock: () => ipcRenderer.invoke(IPC.pwLock),
     onOffer: (cb: (o: PasswordOffer) => void) => on(IPC.pwOffer, cb),
     onFillAvailable: (cb: (f: FillAvailable) => void) => on(IPC.pwFillAvailable, cb)
   },
