@@ -1,0 +1,337 @@
+/* Panel "Lo que TEK sabe de ti" + tarjeta de auto-rutina. */
+
+.brain-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(4, 4, 6, 0.62);
+  backdrop-filter: blur(6px);
+}
+.brain-panel {
+  width: min(560px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #23272d;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.brain-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.brain-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-hi);
+  margin: 0;
+}
+.brain-sub {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-lo);
+}
+.brain-x {
+  background: none;
+  border: none;
+  color: var(--text-lo);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.brain-x:hover {
+  color: var(--text-hi);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.brain-body {
+  overflow-y: auto;
+  padding: 8px 22px 20px;
+}
+.brain-sec {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.brain-sec:last-of-type {
+  border-bottom: none;
+}
+.brain-sec h2 {
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+  margin: 0 0 10px;
+}
+.brain-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.brain-sec-head h2 {
+  margin: 0;
+}
+.brain-note {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--text-lo);
+}
+.brain-empty {
+  font-size: 12.5px;
+  color: var(--text-lo);
+  opacity: 0.7;
+}
+
+.brain-toggle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  transition: all 0.15s ease;
+}
+.brain-toggle.is-on {
+  color: #7ee0a5;
+  border-color: rgba(126, 224, 165, 0.4);
+}
+.brain-toggle.is-off {
+  color: var(--text-lo);
+}
+
+.brain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.brain-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  transition: background 0.14s ease;
+}
+.brain-list li:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.brain-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.brain-eq {
+  color: var(--gold);
+  font-size: 12px;
+}
+.brain-host {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-hi);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brain-score {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-lo);
+}
+.brain-forget {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-lo);
+  opacity: 0;
+  transition: opacity 0.14s ease, color 0.14s ease;
+}
+.brain-list li:hover .brain-forget {
+  opacity: 1;
+}
+.brain-forget:hover {
+  color: var(--accent-warm);
+}
+/* En "sitios que no aprende" la accion es positiva y siempre visible. */
+.brain-forget.is-shown {
+  opacity: 0.75;
+}
+.brain-forget.is-shown:hover {
+  color: var(--gold-bright);
+  opacity: 1;
+}
+
+.brain-routines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.brain-routines li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.brain-bucket {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--gold);
+  text-transform: capitalize;
+  min-width: 72px;
+}
+.brain-route {
+  font-size: 12.5px;
+  color: var(--text-hi);
+}
+
+.brain-foot {
+  padding-top: 16px;
+}
+.brain-wipe {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 77, 61, 0.3);
+  background: rgba(255, 77, 61, 0.06);
+  color: var(--accent-warm);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.brain-wipe:hover {
+  background: rgba(255, 77, 61, 0.12);
+}
+
+/* Acciones de "Datos de navegacion" (borrado de cookies/cache/storage). */
+.brain-data-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+}
+.brain-data-wipe {
+  margin-left: auto;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 77, 61, 0.3);
+  background: rgba(255, 77, 61, 0.06);
+  color: var(--accent-warm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.brain-data-wipe:hover {
+  background: rgba(255, 77, 61, 0.12);
+}
+.brain-cleared {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* --- Tarjeta de auto-rutina (abajo) ------------------------------------- */
+
+.routine-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 14px 16px 14px 20px;
+  border: 1px solid rgba(244, 213, 138, 0.4);
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  max-width: min(680px, 92vw);
+}
+.routine-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+.routine-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.routine-steps {
+  font-size: 13px;
+  color: var(--text-hi);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.routine-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.routine-cancel {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--text-lo);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.routine-cancel:hover {
+  color: var(--text-hi);
+  border-color: #3a3f47;
+}
+.routine-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--gold);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: #0a0a0b;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.routine-open:hover {
+  background: var(--gold-bright);
+}
+.routine-count {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(10, 10, 11, 0.25);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}

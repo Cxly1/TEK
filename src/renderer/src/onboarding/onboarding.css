@@ -1,0 +1,333 @@
+/* TEK — bienvenida (pide tu nombre) y tutorial guiado con foco. */
+
+/* --- Bienvenida ---------------------------------------------------------- */
+
+.wel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 940;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(70% 60% at 50% 45%, #0a0b0d 0%, var(--bg-void) 75%);
+  -webkit-app-region: drag; /* ventana frameless: se puede mover desde aqui */
+}
+
+.wel-card {
+  width: min(440px, 88vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 44px 34px 26px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.6);
+  -webkit-app-region: no-drag;
+}
+.wel-mark {
+  font-size: 32px;
+  line-height: 1;
+  color: var(--gold);
+  opacity: 0.85;
+  margin-bottom: 2px;
+}
+.wel-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-hi);
+}
+.wel-sub {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-lo);
+}
+
+.wel-input {
+  width: 100%;
+  height: 46px;
+  margin-top: 14px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  color: var(--text-hi);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  text-align: center;
+  outline: none;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.wel-input::placeholder {
+  color: #4a4f55;
+}
+.wel-input:focus {
+  border-color: rgba(244, 213, 138, 0.55);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+.wel-preview {
+  min-height: 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--gold-bright);
+  opacity: 0.75;
+}
+
+.wel-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 14px;
+}
+.wel-btn {
+  flex: 1;
+  height: 40px;
+  border-radius: 10px;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.wel-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.wel-yes {
+  border: 1px solid rgba(244, 213, 138, 0.5);
+  background: rgba(227, 179, 65, 0.08);
+  color: var(--gold-bright);
+}
+.wel-yes:not(:disabled):hover {
+  border-color: var(--gold-bright);
+  background: rgba(227, 179, 65, 0.16);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+.wel-no {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-lo);
+}
+.wel-no:not(:disabled):hover {
+  border-color: #3a4046;
+  color: var(--text-hi);
+}
+
+.wel-foot {
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: #43484e;
+}
+
+/* --- Tutorial guiado ------------------------------------------------------ */
+
+.tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+}
+
+/* Capa que se come los clics: durante el tutorial no se toca la UI de debajo. */
+.tour-block {
+  position: absolute;
+  inset: 0;
+}
+
+/* Pasos sin foco: oscurecido plano. */
+.tour-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 4, 5, 0.82);
+  pointer-events: none;
+}
+
+/*
+ * El hueco de luz. El truco es la sombra gigante: el interior del rectangulo
+ * queda limpio y TODO lo demas oscurecido por el mismo elemento, asi que basta
+ * animar left/top/width/height para que el foco viaje de una pieza a otra.
+ */
+.tour-hole {
+  position: absolute;
+  border-radius: 12px;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 9999px rgba(4, 4, 5, 0.82),
+    0 0 0 1px rgba(244, 213, 138, 0.75),
+    0 0 26px 4px var(--gold-glow),
+    inset 0 0 22px rgba(227, 179, 65, 0.07);
+}
+
+/* Anillo que se cierra sobre la pieza al llegar: la sensacion de zoom. */
+.tour-ring {
+  position: absolute;
+  border-radius: 12px;
+  border: 1px solid var(--gold-bright);
+  pointer-events: none;
+}
+
+/* Posicionador de la tarjeta: el transform vive aqui para no pelearse con
+   el transform que motion anima dentro (.tour-card). */
+.tour-anchor {
+  position: absolute;
+  width: min(448px, 90vw);
+  transform: translateX(-50%);
+}
+.tour-anchor.is-center {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.tour-card {
+  padding: 20px 22px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+}
+.tour-count {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+  opacity: 0.7;
+}
+.tour-title {
+  margin: 6px 0 0;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-hi);
+}
+.tour-body {
+  margin: 8px 0 0;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #9aa0a6;
+}
+
+.tour-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tour-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: #9aa0a6;
+}
+.tour-list kbd {
+  flex: none;
+  min-width: 84px;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: center;
+  color: var(--gold-bright);
+}
+
+.tour-dots {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+}
+.tour-dot {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #2a2e33;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    transform 0.16s ease;
+}
+.tour-dot:hover {
+  background: #414750;
+}
+.tour-dot.is-on {
+  background: var(--gold);
+  transform: scale(1.25);
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+.tour-nav {
+  display: flex;
+  gap: 8px;
+}
+.tour-skip {
+  border: none;
+  background: none;
+  padding: 6px 2px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: #5c6167;
+  cursor: pointer;
+  transition: color 0.16s ease;
+}
+.tour-skip:hover {
+  color: var(--text-hi);
+}
+.tour-btn {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.tour-btn:hover {
+  border-color: #3a4046;
+  color: var(--text-hi);
+}
+.tour-btn.is-primary {
+  border-color: rgba(244, 213, 138, 0.5);
+  background: rgba(227, 179, 65, 0.08);
+  color: var(--gold-bright);
+}
+.tour-btn.is-primary:hover {
+  border-color: var(--gold-bright);
+  background: rgba(227, 179, 65, 0.16);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}

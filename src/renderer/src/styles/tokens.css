@@ -1,0 +1,31 @@
+/* TEK — tokens de diseno. Estetica "fosforo sobre vacio" (retro CRT + minimalismo). */
+:root {
+  /* Fondo */
+  --bg-void: #060607;
+  --bg-surface: #0e0f11;
+  --bg-elevated: #16181b;
+  --line: #1e2125;
+
+  /* Texto */
+  --text-hi: #f2f3f5;
+  --text-lo: #6b7075;
+  --phosphor: #e8e9eb;
+
+  /* Halos / CRT */
+  --glow: rgba(242, 243, 245, 0.35);
+  --accent-warm: #ff4d3d; /* aberracion cromatica roja */
+  --accent-cool: #3da2ff; /* aberracion cromatica azul */
+
+  /* Oro — SOLO hover/glow bajo el cursor, nunca relleno */
+  --gold: #e3b341;
+  --gold-bright: #f4d58a;
+  --gold-glow: rgba(227, 179, 65, 0.2);
+
+  /* Medidas */
+  --topbar-h: 80px;
+  --radius: 12px;
+
+  /* Tipografia */
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Geist Mono', ui-monospace, 'Cascadia Code', monospace;
+}

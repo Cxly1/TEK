@@ -1,0 +1,12 @@
+node_modules
+out
+dist
+release
+.DS_Store
+*.log
+*.tsbuildinfo
+
+# Herramientas locales y material de trabajo (no forman parte del navegador)
+.claude/
+__ztest__/
+_shot_*.png

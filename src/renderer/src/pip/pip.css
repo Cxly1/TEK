@@ -1,0 +1,89 @@
+/* TEK — barra del mini-player (Picture-in-Picture). Vive en su propia vista
+   nativa, sobre el video. Mismo lenguaje que la TopBar: superficie oscura,
+   iconos planos que se encienden en oro al pasar el cursor. */
+
+.pipbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 5px 0 10px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-lo);
+  font-family: var(--font-ui);
+  user-select: none;
+  overflow: hidden;
+  cursor: grab;
+}
+.pipbar:active {
+  cursor: grabbing;
+}
+
+/* Identidad del sitio: favicon (o punto dorado) + titulo. */
+.pip-id {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+}
+.pip-favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
+}
+.pip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 6px var(--gold-glow);
+  flex-shrink: 0;
+}
+.pip-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--text-hi);
+}
+
+/* Controles a la derecha. */
+.pip-controls {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.pip-btn {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-lo);
+  cursor: pointer;
+  border-radius: 6px;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+.pip-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--gold-bright);
+}
+.pip-btn:active {
+  transform: translateY(0.5px);
+}
+.pip-close:hover {
+  background: #e23b2e;
+  color: #fff;
+}

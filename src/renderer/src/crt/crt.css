@@ -1,0 +1,39 @@
+.crt-off {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* fondo que se vuelve negro mientras la imagen colapsa */
+.crt-back {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-void);
+  opacity: 0;
+}
+
+/* el "tubo": una pantalla de fosforo (centro brillante, bordes oscuros) que se
+   aplasta a linea y luego a punto. Sin marcos de color: glow suave y limpio. */
+.crt-tube {
+  position: absolute;
+  inset: 0;
+  transform-origin: center center;
+  opacity: 0;
+  background: radial-gradient(
+    115% 75% at 50% 50%,
+    #ffffff 0%,
+    #dfe2e6 26%,
+    #6c7176 58%,
+    #15171a 82%,
+    var(--bg-void) 100%
+  );
+  filter: drop-shadow(0 0 18px var(--glow));
+  will-change: transform, opacity, filter;
+}
+
+/* escanlineas solo durante el apagado */
+.crt-tube .scanlines {
+  opacity: 0.5;
+}

@@ -1,0 +1,86 @@
+/* Menu unico de herramientas (☰). Overlay transparente que captura el clic
+   fuera para cerrar; el menu se ancla arriba a la derecha, bajo la barra. */
+.tm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 820;
+}
+
+.tm-menu {
+  position: absolute;
+  top: 40px;
+  right: 8px;
+  width: 270px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+}
+
+.tm-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 11px;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-hi);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease;
+}
+.tm-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-left-color: var(--gold);
+}
+
+.tm-icon {
+  width: 18px;
+  text-align: center;
+  color: var(--text-lo);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.tm-item:hover .tm-icon {
+  color: var(--gold-bright);
+}
+
+.tm-label {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.tm-sub {
+  color: var(--text-lo);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.tm-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #0a0a0b;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}

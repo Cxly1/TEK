@@ -1,0 +1,36 @@
+appId: com.tek.browser
+productName: TEK
+copyright: Copyright (c) 2026 Cxly1
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+
+# better-sqlite3 lleva un binario nativo (.node): dentro del asar no se puede
+# cargar, asi que se empaqueta desempaquetado al lado.
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+
+# El runtime es el fork de castlabs (Widevine). Su version viene de un tag de
+# GitHub, que electron-builder no sabe leer del package.json: se la damos aqui.
+electronVersion: 37.10.3
+# El binario nativo ya se compila con `pnpm run rebuild` (ABI de Electron).
+# Dejar que electron-builder lo reconstruya lo rompe con pnpm.
+npmRebuild: false
+
+win:
+  target:
+    - nsis
+  artifactName: TEK-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: TEK

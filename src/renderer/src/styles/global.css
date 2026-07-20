@@ -1,0 +1,109 @@
+@import './tokens.css';
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg-void);
+  color: var(--text-hi);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* Region arrastrable de la ventana frameless. Los controles llevan no-drag. */
+.drag {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ----------------------------------------------------------------------------
+   Spotlight dorado: halo que sigue al cursor sobre elementos interactivos.
+   El elemento expone --x / --y (px relativos) via JS en pointermove.
+---------------------------------------------------------------------------- */
+.gold-spot {
+  position: relative;
+  isolation: isolate;
+}
+.gold-spot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle 120px at var(--x, 50%) var(--y, 50%),
+    rgba(244, 213, 138, 0.16),
+    rgba(244, 213, 138, 0.05) 38%,
+    transparent 66%
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  z-index: -1;
+}
+.gold-spot[data-hot='true']::before {
+  opacity: 1;
+}
+
+/* Capa de scanlines CRT, se activa solo durante momentos puntuales. */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.16) 3px,
+    rgba(0, 0, 0, 0) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* Texto con leve aberracion cromatica (acento CRT, uso puntual). */
+.chroma {
+  text-shadow:
+    -0.5px 0 0 var(--accent-warm),
+    0.5px 0 0 var(--accent-cool);
+}
+
+/* ----------------------------------------------------------------------------
+   Navegacion por teclado (useArrowNav). El elemento activo lleva
+   data-active="true"; .knav-item le pone el anillo dorado (hermano de
+   .cmd-row.is-active). El foco real de inputs/botones usa :focus-visible.
+---------------------------------------------------------------------------- */
+.knav-item {
+  transition:
+    background 0.14s ease,
+    box-shadow 0.14s ease;
+}
+.knav-item[data-active='true'] {
+  background: rgba(244, 213, 138, 0.1);
+  box-shadow:
+    0 0 0 1.5px var(--gold),
+    0 0 14px var(--gold-glow);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+/* Contenedores que reciben el foco solo por programa (lienzo y paneles, todos
+   con tabIndex -1) no muestran marco: el resaltado lo lleva el item activo. */
+[tabindex='-1']:focus {
+  outline: none;
+}

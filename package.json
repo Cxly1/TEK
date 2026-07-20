@@ -1,0 +1,50 @@
+{
+  "name": "tek",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TEK — navegador minimalista personal con estetica retro-CRT y automatizacion de la navegacion",
+  "license": "MIT",
+  "homepage": "https://github.com/Cxly1/TEK",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cxly1/TEK.git"
+  },
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "dist": "electron-vite build && electron-builder --win"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.18.0",
+    "better-sqlite3": "^12.10.0",
+    "motion": "^11.15.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "github:castlabs/electron-releases#v37.10.3+wvcus",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^5.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^7.0.0"
+  }
+}
