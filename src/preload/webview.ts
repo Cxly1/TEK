@@ -561,7 +561,7 @@ document.addEventListener(
 //
 // Aqui vivia un "defuser" propio que parcheaba JSON.parse, Response.prototype.json
 // y ytInitialPlayerResponse para borrar adPlacements/playerAds. FUERA, y a
-// proposito, tras diagnosticarlo con Migue el 2026-07-20:
+// proposito, tras diagnosticarlo en vivo el 2026-07-20:
 //
 //  - YouTube ya no solo mira si le bloqueas peticiones: comprueba si le han
 //    PODADO el player-response. Nuestra version cruda se notaba -> salia el aviso
