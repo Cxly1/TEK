@@ -4,11 +4,13 @@ import type {
   DownloadEntry,
   FillAvailable,
   FindResult,
+  MediaState,
   PasswordOffer,
   RecipeToastInfo,
   Routine,
   TabMeta,
   TabsState,
+  UpdateState,
   UserProfile
 } from '@shared/ipc'
 
@@ -19,6 +21,12 @@ interface TekState {
   paletteOpen: boolean
   /** Texto con el que arranca el palette al abrirse (p. ej. la tecla que disparo la apertura). */
   seed: string
+  /**
+   * Si el `seed` debe salir SELECCIONADO al abrir (estilo barra de direcciones:
+   * escribir lo reemplaza, Ctrl+C lo copia). Falso cuando el seed es la tecla
+   * que disparo la apertura, porque ahi el cursor tiene que quedar detras.
+   */
+  seedSelected: boolean
   /** Si hay sesion previa por reanudar: numero de pestanas. null = sin prompt. */
   resume: number | null
   /** Rutina detectada para esta franja, pendiente de abrir. null = nada. */
@@ -58,6 +66,12 @@ interface TekState {
   pwOffer: PasswordOffer | null
   /** Credenciales disponibles para el sitio de una pestana (toast de relleno). */
   fillAvail: FillAvailable | null
+  /** Estado de la actualizacion de TEK (lo empuja el main). */
+  update: UpdateState
+  /** Aviso pasajero tras buscar a mano ("ya estas al dia"). '' = ninguno. */
+  updateNote: string
+  /** "Ahora suena" + modo "una sola pestana a la vez" (lo empuja el main). */
+  media: MediaState
   /** Grabacion de macro en curso (indicador REC). */
   recording: boolean
   /** Grupos (por host) plegados en la barra. */
@@ -93,8 +107,11 @@ interface TekState {
   setRecipeToast: (t: RecipeToastInfo | null) => void
   setPwOffer: (o: PasswordOffer | null) => void
   setFillAvail: (f: FillAvailable | null) => void
+  setUpdate: (u: UpdateState) => void
+  setUpdateNote: (note: string) => void
+  setMedia: (m: MediaState) => void
   setRecording: (rec: boolean) => void
-  openPalette: (seed?: string) => void
+  openPalette: (seed?: string, seedSelected?: boolean) => void
   closePalette: () => void
   togglePalette: () => void
   setTabs: (state: TabsState) => void
@@ -104,6 +121,7 @@ export const useTek = create<TekState>((set) => ({
   phase: 'genesis',
   paletteOpen: false,
   seed: '',
+  seedSelected: false,
   resume: null,
   routine: null,
   brainOpen: false,
@@ -124,6 +142,9 @@ export const useTek = create<TekState>((set) => ({
   recipeToast: null,
   pwOffer: null,
   fillAvail: null,
+  update: { phase: 'idle', version: '', notes: '', percent: 0, error: '' },
+  updateNote: '',
+  media: { now: null, exclusive: false },
   recording: false,
   collapsedGroups: {},
   tabs: [],
@@ -230,21 +251,24 @@ export const useTek = create<TekState>((set) => ({
   setRecipeToast: (recipeToast) => set({ recipeToast }),
   setPwOffer: (pwOffer) => set({ pwOffer }),
   setFillAvail: (fillAvail) => set({ fillAvail }),
+  setUpdate: (update) => set({ update }),
+  setUpdateNote: (updateNote) => set({ updateNote }),
+  setMedia: (media) => set({ media }),
   setRecording: (recording) => set({ recording }),
-  openPalette: (seed = '') => {
+  openPalette: (seed = '', seedSelected = false) => {
     void window.tek.setVisible(false)
-    set({ paletteOpen: true, seed })
+    set({ paletteOpen: true, seed, seedSelected })
   },
   closePalette: () => {
     // El main decide si la vista vuelve (no vuelve si la pestana esta en blanco).
     void window.tek.setVisible(true)
-    set({ paletteOpen: false, seed: '' })
+    set({ paletteOpen: false, seed: '', seedSelected: false })
   },
   togglePalette: () =>
     set((s) => {
       const next = !s.paletteOpen
       void window.tek.setVisible(!next)
-      return { paletteOpen: next, seed: '' }
+      return { paletteOpen: next, seed: '', seedSelected: false }
     }),
   setTabs: (state) => set({ tabs: state.tabs, activeId: state.activeId })
 }))

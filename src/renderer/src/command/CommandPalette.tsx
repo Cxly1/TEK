@@ -454,7 +454,13 @@ export function CommandPalette(): React.JSX.Element {
   )
 
   useEffect(() => {
-    inputRef.current?.focus()
+    const el = inputRef.current
+    if (!el) return
+    el.focus()
+    // Sembrada desde la barra de direcciones: la URL entera sale SELECCIONADA,
+    // asi escribir la reemplaza y Ctrl+C la copia, como en cualquier navegador.
+    // Con el seed de "empezar a teclear" no se selecciona: el cursor va detras.
+    if (useTek.getState().seedSelected) el.select()
   }, [])
   useEffect(() => {
     // Con texto, el default es la primera fila (la intencion escrita); sin

@@ -6,6 +6,7 @@ import { useArrowNav, type NavItemProps } from '@/lib/useArrowNav'
 import { groupColor } from '@/lib/groupColor'
 import { greetingForUser } from '@/lib/greeting'
 import { TopBar } from './TopBar'
+import { CanvasNowPlaying } from './NowPlaying'
 import { FindBar } from '../find/FindBar'
 import './shell.css'
 
@@ -218,6 +219,9 @@ export function Shell(): React.JSX.Element {
         <AnimatePresence>{findOpen && <FindBar key="find" />}</AnimatePresence>
         {showCanvas && (
           <div className="newtab">
+            {/* Misma esquina que en una pagina (la fila de navegacion no existe
+                aqui): logo del sitio que suena + espectro + los tres botones. */}
+            <CanvasNowPlaying />
             <Clock />
 
             <button

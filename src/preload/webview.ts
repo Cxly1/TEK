@@ -3,13 +3,12 @@ import { ipcRenderer } from 'electron'
 
 /**
  * Preload de las paginas (WebContentsView). Piezas: captura/relleno de
- * contrasenas, grabacion de macros y ANTI-ANUNCIOS de YouTube/Spotify — poda los
- * anuncios del "player response" ANTES de que el reproductor los lea. La capa de
- * red de Ghostery no puede con los anuncios de video porque YouTube los sirve
- * desde su propio dominio (googlevideo.com, igual que el video real); la unica
- * via fiable es quitar `adPlacements`/`playerAds`/`adSlots` del JSON del player
- * en el instante en que aparece. La inyeccion de scriptlets de Ghostery es
- * asincrona y suele llegar tarde; esto es sincrono, en document-start.
+ * contrasenas, grabacion de macros, ANTI-ANUNCIOS de YouTube (inyecta los
+ * scriptlets de uBO en document_start, ver bloque de abajo) y un defuser propio
+ * de Spotify (sus anuncios de audio no viajan por la red filtrable). El defuser
+ * casero de YouTube que podaba `adPlacements`/`playerAds` a mano SE QUITO: chocaba
+ * con los scriptlets de uBO (el metodo real de Brave) y era justo lo que YouTube
+ * detectaba. Ahora YouTube se trata como cualquier sitio, con esos scriptlets.
  *
  * ZOOM LUPA: en esta maquina el pinch del trackpad NO llega como gesto nativo
  * al compositor (probado en vivo: habilitar el zoom visual nativo no hizo nada)
@@ -30,6 +29,245 @@ import { ipcRenderer } from 'electron'
 // Canal por el que el main pide quitar la lupa con Ctrl+0 (espejo de
 // WV.lupaReset en src/shared/ipc.ts; inline: preload autocontenido).
 const LUPA_RESET = 'wv:lupaReset'
+
+/**
+ * "Permitir sitio" en el escudo = TEK NO TOCA esta pagina. Ni filtrado de red
+ * (eso lo hace el main) ni los defusers de anuncios de aqui abajo.
+ *
+ * Importa de verdad en YouTube: su anti-adblock tambien detecta que le hemos
+ * PODADO el player-response, no solo que le bloqueemos peticiones. Sin esta
+ * salida no habia forma de decirle a TEK "dejalo en paz" y el reproductor se
+ * quedaba en negro con el aviso de "desactiva el bloqueador".
+ *
+ * Sincrono a proposito: la respuesta decide si parcheamos globales, y eso tiene
+ * que ocurrir ANTES del primer script de la pagina. Es una sola llamada por carga.
+ */
+const SITE_UNTOUCHED = 'wv:siteUntouched'
+let untouched = false
+try {
+  untouched = ipcRenderer.sendSync(SITE_UNTOUCHED, location.hostname) === true
+} catch {
+  /* si el main no contesta, seguimos como siempre (protegiendo) */
+}
+
+// --- Scriptlets del adblock (document_start, ANTES que la pagina) ------------
+// La pieza que le faltaba al "metodo Brave": los `+js(...)` de las listas de
+// uBO (los set-constant que desarman el detector anti-adblock de YouTube, las
+// podas de anuncios por json-edit/replace-fetch...) SOLO funcionan si corren
+// antes del primer script de la pagina. El adaptador de Ghostery los manda con
+// webContents.executeJavaScript, que con la pagina cargando espera a
+// did-stop-loading: en YouTube llegaban tarde y el muro salia igual. Aqui se
+// piden sincronos al main (espejo de WV.adScripts) y se ejecutan YA; el main
+// le quita los scripts al camino del adaptador para no inyectarlos dos veces
+// (ver Adblock.setBlocker). El COMO (aislar cada scriptlet, Trusted Types) va
+// documentado abajo, junto a cada paso.
+const AD_SCRIPTS = 'wv:adScripts'
+;(function injectAdScriptlets(): void {
+  if (untouched) return
+  if (location.protocol !== 'https:' && location.protocol !== 'http:') return
+  let scripts: unknown
+  try {
+    scripts = ipcRenderer.sendSync(AD_SCRIPTS, location.href)
+  } catch {
+    return
+  }
+  if (!Array.isArray(scripts) || scripts.length === 0) return
+
+  // Se construye UN bundle con todos los scriptlets, cada uno en su propia IIFE
+  // + try/catch. La IIFE es la cura de la recursion: el motor devuelve 34 trozos
+  // con 17 copias de `function safeSelf`/`proxyApplyFn` (la maquinaria
+  // anti-deteccion de uBO que envuelve Reflect.apply en un Proxy). En scope
+  // compartido se pisan, re-envuelven un Reflect.apply YA envuelto y el trap se
+  // llama a si mismo -> RangeError "Maximum call stack" que ademas envenena el
+  // apply global y tumbaba el JS de YouTube (kevlar). Aislados, cada uno instala
+  // sus proxies de forma coherente. Se DEDUPLICAN los identicos (5 de 34).
+  // Red de seguridad DENTRO del bundle: si un scriptlet recursa igual, su catch
+  // restaura los nativos guardados en `__ra/__fa/__ft` -> se pierde ESE, no la
+  // pagina.
+  const seen = new Set<string>()
+  const parts: string[] = []
+  for (const code of scripts) {
+    if (typeof code !== 'string' || seen.has(code)) continue
+    seen.add(code)
+    parts.push(
+      `try{(function(){${code}\n})()}catch(_e){if(_e&&_e.name==='RangeError'){` +
+        `try{Reflect.apply=__ra}catch(_){}` +
+        `try{Function.prototype.apply=__fa}catch(_){}` +
+        `try{Function.prototype.toString=__ft}catch(_){}` +
+        `}}`
+    )
+  }
+  if (parts.length === 0) return
+  const bundle =
+    `(function(){var __ra=Reflect.apply,__fa=Function.prototype.apply,` +
+    `__ft=Function.prototype.toString;\n${parts.join('\n')}\n})();`
+
+  // Como inyectarlo. YouTube fuerza Trusted Types (`require-trusted-types-for
+  // 'script'`): ahi eval NO vale — el eval INDIRECTO ni siquiera EJECUTA un
+  // TrustedScript, lo devuelve tal cual (por eso la 1a version "no hacia nada" y
+  // el muro seguia). La via que SI corre bajo TT es un <script> cuyo `.text` es
+  // un TrustedScript. Sin TT, el eval indirecto (alcance global) basta. Un probe
+  // decide; el fallo del probe deja un unico aviso de CSP en consola, inofensivo.
+  let plainOk = true
+  try {
+    ;(0, eval)('0')
+  } catch {
+    plainOk = false
+  }
+  if (plainOk) {
+    try {
+      ;(0, eval)(bundle)
+      console.debug(`[tek] adblock: ${parts.length} scriptlets via eval`)
+    } catch (e) {
+      console.debug('[tek] adblock: eval del bundle rechazado:', e)
+    }
+    return
+  }
+
+  // Camino Trusted Types (o CSP sin unsafe-eval): <script> con .text.
+  try {
+    interface TTPolicy {
+      createScript(s: string): unknown
+    }
+    const tt = (window as { trustedTypes?: { createPolicy(n: string, r: unknown): TTPolicy } })
+      .trustedTypes
+    const policy = tt ? tt.createPolicy('tek-adblock', { createScript: (s: string) => s }) : null
+    const el = document.createElement('script')
+    // `.text` acepta el TrustedScript (o el string pelado si no hubiera TT).
+    ;(el as unknown as { text: unknown }).text = policy ? policy.createScript(bundle) : bundle
+    // A document_start existe <html>; <head> puede que aun no. Un <script> inline
+    // creado por JS (no por el parser) corre igual bajo strict-dynamic.
+    ;(document.head || document.documentElement).appendChild(el)
+    el.remove()
+    console.debug(`[tek] adblock: ${parts.length} scriptlets via <script> (TT=${!!policy})`)
+  } catch (e) {
+    console.debug('[tek] adblock: inyeccion por <script> rechazada:', e)
+  }
+})()
+
+// --- YouTube: fingir INACTIVIDAD para que no sirva sus anuncios casa ----------
+// Los anuncios que se cuelan son de YouTube MISMO (Premium/Music, `AdSense-Viral`)
+// y NO viven en adPlacements de forma podable: YouTube decide servirlos segun tu
+// "tiempo desde la ultima interaccion" (`lactMilliseconds` en la peticion a
+// /youtubei/v1/player). Poniendolo ENORME, YouTube cree que llevas una eternidad
+// sin tocar nada y NO mete el anuncio. Es el mismo enfoque que uBO, pero:
+//   - INCONDICIONAL (uBO lo hace condicional a un marcador que ponen OTROS
+//     scriptlets — esa coordinacion multi-paso es justo lo que no sobrevive a la
+//     inyeccion aislada; aqui va directo).
+//   - fetch Y XHR (uBO solo intercepta XHR; el YouTube de hoy pide /player por
+//     fetch, por eso el `lact=1571` que veiamos en consola: el truco no aplicaba).
+// Editar la PETICION (no la respuesta) es INDETECTABLE: YouTube no puede saber
+// que mentiste sobre tu inactividad; a diferencia de podar adPlacements de la
+// respuesta —que YouTube SI detecta— esto no reactiva el muro. Todo con
+// try/catch y sin tocar el cuerpo si no cuadra: nunca puede romper el player.
+;(function spoofLactYouTube(): void {
+  if (untouched) return
+  if (!/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) return
+
+  const isPlayerReq = (url: string): boolean => /\/youtubei\/v[0-9]+\/player(\?|$)/.test(url)
+
+  /** Mete un lact enorme en el cuerpo JSON del /player. Devuelve el cuerpo tal
+   *  cual si no es el JSON esperado (jamas rompe la peticion). */
+  const spoofBody = (body: string): string => {
+    try {
+      const data = JSON.parse(body) as {
+        context?: { contentPlaybackContext?: Record<string, unknown> }
+      }
+      const cpc = data?.context?.contentPlaybackContext
+      if (!cpc || typeof cpc !== 'object') return body
+      // Enorme = "hace una eternidad que no interactuo" = inactivo -> sin ads.
+      cpc.lactMilliseconds = String(Date.now())
+      return JSON.stringify(data)
+    } catch {
+      return body
+    }
+  }
+
+  // fetch: YouTube pide /player por aqui. CLAVE (era el fallo de la 1a version):
+  // YouTube REEMPLAZA `window.fetch` con el suyo DESPUES de nosotros, asi que un
+  // wrap normal quedaba PISADO y el spoof no se aplicaba (por eso seguia el
+  // `lact=1571` en consola). Aqui `window.fetch` pasa a ser un getter/setter: lo
+  // que YouTube asigne se RE-ENVUELVE, de modo que nuestro spoof queda SIEMPRE por
+  // encima, gane quien gane la carrera. `toString` finge nativo para no delatarse.
+  try {
+    const wrap = (f: typeof window.fetch): typeof window.fetch => {
+      const wrapped = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+        try {
+          const url =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+                ? input.href
+                : (input as Request).url
+          if (isPlayerReq(url) && init && typeof init.body === 'string') {
+            init = { ...init, body: spoofBody(init.body) }
+          }
+        } catch {
+          /* cualquier fallo: peticion intacta */
+        }
+        return f.call(this as typeof window, input, init)
+      } as typeof window.fetch
+      try {
+        wrapped.toString = () => f.toString()
+      } catch {
+        /* toString no reescribible: da igual */
+      }
+      return wrapped
+    }
+    let current = wrap(window.fetch)
+    Object.defineProperty(window, 'fetch', {
+      configurable: true,
+      get() {
+        return current
+      },
+      set(v: typeof window.fetch) {
+        // YouTube puso el suyo: lo envolvemos y seguimos mandando nosotros.
+        try {
+          current = wrap(v)
+        } catch {
+          current = v
+        }
+      }
+    })
+  } catch {
+    /* no se pudo instalar el getter/setter: sin spoof de fetch */
+  }
+
+  // XHR: por si alguna carga usa el camino clasico.
+  try {
+    const urlByXhr = new WeakMap<XMLHttpRequest, string>()
+    const origOpen = XMLHttpRequest.prototype.open
+    const origSend = XMLHttpRequest.prototype.send
+    XMLHttpRequest.prototype.open = function (
+      this: XMLHttpRequest,
+      method: string,
+      url: string | URL,
+      ...rest: unknown[]
+    ) {
+      try {
+        urlByXhr.set(this, typeof url === 'string' ? url : url.href)
+      } catch {
+        /* ignora */
+      }
+      // @ts-expect-error firma variadica del open original
+      return origOpen.call(this, method, url, ...rest)
+    } as typeof XMLHttpRequest.prototype.open
+    XMLHttpRequest.prototype.send = function (
+      this: XMLHttpRequest,
+      body?: Document | XMLHttpRequestBodyInit | null
+    ) {
+      try {
+        const url = urlByXhr.get(this) ?? ''
+        if (isPlayerReq(url) && typeof body === 'string') body = spoofBody(body)
+      } catch {
+        /* peticion intacta */
+      }
+      return origSend.call(this, body)
+    } as typeof XMLHttpRequest.prototype.send
+  } catch {
+    /* no se pudo envolver XHR */
+  }
+})()
 
 let lupaScale = 1
 let lupaX = 0
@@ -319,228 +557,27 @@ document.addEventListener(
   true
 )
 
-// --- Anti-anuncios de YouTube (solo en hosts de YouTube) ---------------------
-;(function defuseYouTubeAds(): void {
-  const host = location.hostname
-  if (!/(^|\.)youtube(-nocookie)?\.com$/.test(host)) return
-
-  // Claves de anuncios dentro del player/browse/next response.
-  const AD_KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams']
-
-  /** Quita las claves de anuncios de un objeto (y de su playerResponse anidado). */
-  const prune = (obj: unknown, depth = 0): unknown => {
-    if (!obj || typeof obj !== 'object' || depth > 4) return obj
-    const o = obj as Record<string, unknown>
-    for (const k of AD_KEYS) {
-      if (k in o) {
-        try {
-          delete o[k]
-        } catch {
-          /* propiedad no configurable: ignora */
-        }
-      }
-    }
-    // El player response puede venir anidado en estas envolturas comunes.
-    if (o.playerResponse) prune(o.playerResponse, depth + 1)
-    if (o.response) prune(o.response, depth + 1)
-    return obj
-  }
-
-  // 1) JSON.parse: cubre respuestas leidas como texto y luego parseadas.
-  try {
-    const orig = JSON.parse
-    JSON.parse = function (this: unknown, ...args: Parameters<typeof JSON.parse>) {
-      const out = orig.apply(this, args)
-      try {
-        return prune(out)
-      } catch {
-        return out
-      }
-    }
-  } catch {
-    /* no se pudo envolver JSON.parse */
-  }
-
-  // 2) Response.json: cubre las llamadas fetch a /youtubei/v1/player|next|browse.
-  try {
-    const origJson = Response.prototype.json
-    Response.prototype.json = function (this: Response) {
-      return origJson.apply(this, []).then((data: unknown) => {
-        try {
-          return prune(data)
-        } catch {
-          return data
-        }
-      })
-    }
-  } catch {
-    /* no se pudo envolver Response.json */
-  }
-
-  // 3) ytInitialPlayerResponse: el pre-roll inicial llega como objeto inline (no
-  //    pasa por JSON.parse). Lo interceptamos con un setter que poda al asignar.
-  try {
-    let stored: unknown
-    Object.defineProperty(window, 'ytInitialPlayerResponse', {
-      configurable: true,
-      get() {
-        return stored
-      },
-      set(v: unknown) {
-        stored = prune(v)
-      }
-    })
-  } catch {
-    /* otro script ya lo definio como no-configurable */
-  }
-
-  // 4) ANTI-MURO anti-adblock ("Los bloqueadores de anuncios incumplen las
-  //    Condiciones del Servicio de YouTube"). NO secuestramos el objeto `yt`
-  //    entero (reemplazarlo con un accessor rompia la carga del reproductor):
-  //    solo (a) ponemos a false el flag del popup en cuanto exista la ruta —esto
-  //    evita el muro de raiz—, (b) si el modal aparece igual quitamos SU dialogo
-  //    (no el ytd-popup-container, que YouTube reutiliza para los menus) y
-  //    reanudamos el video, y (c) saltamos un anuncio que llegue a reproducirse.
-  type YtPopups = { adBlockMessageViewModel?: unknown }
-  type YtRoot = { config_?: { openPopupConfig?: { supportedPopups?: YtPopups } } }
-  const disableWall = (): void => {
-    try {
-      const yt = (window as unknown as { yt?: YtRoot }).yt
-      const pops = yt?.config_?.openPopupConfig?.supportedPopups
-      if (pops && pops.adBlockMessageViewModel !== false) pops.adBlockMessageViewModel = false
-    } catch {
-      /* supportedPopups inmutable: queda el respaldo del DOM */
-    }
-  }
-
-  // Aceleramos un anuncio imposible de saltar: hay que deshacerlo al terminar
-  // (YouTube REUSA el mismo <video> para el contenido).
-  let adRateApplied = false
-
-  const killAdWall = (): void => {
-    // config_ se llena despues de crear yt: reafirmamos el flag cada vuelta.
-    disableWall()
-    // Si el modal aparece igual: quitamos SU dialogo + backdrop (no el contenedor
-    // compartido) y reanudamos el video que el muro pauso.
-    const enforcement = document.querySelector('ytd-enforcement-message-view-model')
-    if (enforcement) {
-      ;(enforcement.closest('tp-yt-paper-dialog') ?? enforcement).remove()
-      document.querySelector('tp-yt-iron-overlay-backdrop')?.remove()
-      // YouTube bloquea el scroll y pausa el video al mostrar el muro: revierte.
-      document.documentElement.style.overflow = ''
-      if (document.body) document.body.style.overflow = ''
-      const v = document.querySelector<HTMLVideoElement>('video.html5-main-video')
-      if (v && v.paused) void v.play().catch(() => undefined)
-    }
-    // Red de seguridad: salta el anuncio de video que llegue a reproducirse.
-    const player = document.querySelector('.html5-video-player')
-    if (player?.classList.contains('ad-showing')) {
-      const v = player.querySelector<HTMLVideoElement>('video')
-      if (v && isFinite(v.duration) && v.duration > 0) {
-        try {
-          v.currentTime = v.duration
-        } catch {
-          /* currentTime aun no asignable */
-        }
-      } else if (v) {
-        // Anuncio SIN duracion finita (insercion server-side / live): no hay a
-        // donde saltar; se consume rapido y en silencio. Antes esto dejaba el
-        // player atorado "cargando".
-        try {
-          v.muted = true
-          v.playbackRate = 8
-          adRateApplied = true
-        } catch {
-          /* playbackRate no asignable aun */
-        }
-      }
-      document
-        .querySelector<HTMLElement>(
-          '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button'
-        )
-        ?.click()
-    } else if (adRateApplied) {
-      // El anuncio acelerado termino: restaura el <video> para el contenido.
-      adRateApplied = false
-      const v = document.querySelector<HTMLVideoElement>('video.html5-main-video')
-      if (v) {
-        try {
-          v.playbackRate = 1
-          v.muted = false
-        } catch {
-          /* sin video que restaurar */
-        }
-      }
-    }
-  }
-
-  // ANTI-ATASCO: con los anuncios podados, el player a veces se queda "cargando"
-  // eterno al arrancar (espera un hueco de anuncio server-side que nunca llega).
-  // Si el video lleva >5s buffereando al principio sin avanzar, un seek minimo
-  // via la API del player lo desatasca. Un solo rescate por URL.
-  let stallSince = 0
-  let nudgedFor = ''
-  const checkStall = (): void => {
-    const player = document.querySelector('.html5-video-player')
-    const v = player?.querySelector<HTMLVideoElement>('video')
-    if (!player || !v || player.classList.contains('ad-showing') || v.paused) {
-      stallSince = 0
-      return
-    }
-    const stuck = v.currentTime < 1 && v.readyState < 3 // sin datos para avanzar
-    if (!stuck) {
-      stallSince = 0
-      return
-    }
-    if (stallSince === 0) {
-      stallSince = Date.now()
-      return
-    }
-    if (Date.now() - stallSince > 5000 && nudgedFor !== location.href) {
-      nudgedFor = location.href
-      stallSince = 0
-      try {
-        const mp = player as unknown as { seekTo?: (t: number, allowAhead?: boolean) => void }
-        if (typeof mp.seekTo === 'function') mp.seekTo(Math.max(0.1, v.currentTime + 0.1), true)
-        else v.currentTime += 0.1
-        void v.play().catch(() => undefined)
-        console.debug('[tek] yt-defuse: player atascado al inicio; seek de rescate')
-      } catch {
-        /* el player no acepto el seek: no insistimos */
-      }
-    }
-  }
-
-  const startWallWatch = (): void => {
-    // YouTube muta el DOM SIN PARAR: correr killAdWall en cada mutacion era
-    // trabajo constante del main thread (podia hacer sentir lenta la carga).
-    // Throttle: como mucho una pasada cada 300ms; el resto lo cubre el interval.
-    let wallPending = false
-    const scheduleWall = (): void => {
-      if (wallPending) return
-      wallPending = true
-      setTimeout(() => {
-        wallPending = false
-        killAdWall()
-      }, 300)
-    }
-    try {
-      new MutationObserver(scheduleWall).observe(document.documentElement, {
-        childList: true,
-        subtree: true
-      })
-    } catch {
-      /* sin observer: queda el intervalo */
-    }
-    setInterval(() => {
-      killAdWall()
-      checkStall()
-    }, 1000)
-    killAdWall()
-  }
-  if (document.documentElement) startWallWatch()
-  else document.addEventListener('DOMContentLoaded', startWallWatch, { once: true })
-})()
+// --- Anuncios de YouTube: los quita el ADBLOCK, no este preload --------------
+//
+// Aqui vivia un "defuser" propio que parcheaba JSON.parse, Response.prototype.json
+// y ytInitialPlayerResponse para borrar adPlacements/playerAds. FUERA, y a
+// proposito, tras diagnosticarlo con Migue el 2026-07-20:
+//
+//  - YouTube ya no solo mira si le bloqueas peticiones: comprueba si le han
+//    PODADO el player-response. Nuestra version cruda se notaba -> salia el aviso
+//    "desactiva el bloqueador" y el reproductor se quedaba en NEGRO.
+//  - Y peor: colisionaba con la solucion buena. El motor de Ghostery ya se baja
+//    los scriptlets de uBlock Origin (147 cargados, 34 aplicables a youtube.com;
+//    medido en __ztest__/probe-scriptlets.mjs) y ESE es el metodo que usa Brave:
+//    set-constant para neutralizar los detectores (Object.prototype.adBlocksFound,
+//    adBlockMessageViewModel...) mas json-edit-xhr-request / replace-fetch-response
+//    para podar los anuncios sin dejar huella. Dos capas peleandose por JSON.parse
+//    y por fetch = no funciona ninguna de las dos.
+//
+// Asi que YouTube se trata como cualquier otro sitio: sin exencion de red y sin
+// parches nuestros. Quien mantiene esto son los de uBO, que estan en esa guerra a
+// diario. Si vuelve a fallar, la respuesta NO es volver a parchear globales aqui:
+// es comprobar que los scriptlets se esten inyectando de verdad.
 
 // --- Anti-anuncios de Spotify (solo en open.spotify.com) ---------------------
 // Spotify Free mete sus anuncios de audio como pistas normales en la maquina de
@@ -548,6 +585,8 @@ document.addEventListener(
 // capa de RED no los para, asi que los neutralizamos aqui, en el cliente.
 ;(function defuseSpotifyAds(): void {
   if (location.hostname !== 'open.spotify.com') return
+  // Permitido en el escudo: ni lo miramos (ver SITE_UNTOUCHED arriba).
+  if (untouched) return
 
   const TAG = '[tek] spotify-adblock:'
   const BLOB = 'blob:https://open.spotify.com/'
@@ -766,4 +805,239 @@ document.addEventListener(
     guardedReload('shell sin hidratar tras la carga')
   }
   setTimeout(checkHydrated, 8000)
+})()
+
+// --- MediaSession: "Ahora suena" + control de reproduccion -------------------
+// Sube al main los metadatos que la pagina publica en navigator.mediaSession
+// (titulo, artista, caratula) y ejecuta las ordenes de reproduccion que llegan
+// de vuelta (chip de la barra, teclas multimedia y el "una pestana a la vez").
+// NO depende del escudo (`untouched`): controlar tu musica no es bloquear
+// anuncios, funciona igual en sitios permitidos.
+//
+// Como corre en el MAIN WORLD (contextIsolation:false), se puede envolver el
+// prototipo de MediaSession: el setter de `metadata` avisa en el instante en
+// que cambia la cancion (cero polling util) y `setActionHandler` nos deja
+// GUARDAR los handlers que registra el sitio — "siguiente"/"anterior" se hacen
+// invocando exactamente la funcion que el sitio le daria a Chromium, que es lo
+// que hace el propio navegador con las teclas multimedia.
+;(function nowPlayingBridge(): void {
+  if (location.protocol !== 'https:' && location.protocol !== 'http:') return
+
+  const MEDIA_META = 'wv:mediaMeta'
+  const MEDIA_CONTROL = 'wv:mediaControl'
+
+  /** Handlers que la pagina registro con mediaSession.setActionHandler. */
+  const msHandlers = new Map<string, MediaSessionActionHandler | null>()
+  /** Todo <video>/<audio> que haya llamado a play() (incluye los sueltos, sin DOM). */
+  const mediaEls = new Set<HTMLMediaElement>()
+
+  // YouTube en video suelto a veces NO registra nexttrack/previoustrack (solo
+  // en playlists/Mix): fallback = los botones reales del player (selectores
+  // .ytp-* estables desde hace años). Visible de verdad, no display:none.
+  const ytBtn = (sel: string): HTMLButtonElement | null => {
+    if (!/(^|\.)youtube\.com$/.test(location.hostname)) return null
+    const b = document.querySelector<HTMLButtonElement>(sel)
+    return b && b.offsetParent !== null ? b : null
+  }
+
+  /**
+   * ¿Esta pagina tiene un REPRODUCTOR de verdad (y no solo un "ping" de
+   * notificacion)? Sin esto, el sonidito de 2s de WhatsApp capturaba los
+   * controles y el play quedaba apuntando a la nada. Cuenta como reproductor:
+   * publicar MediaMetadata, registrar handlers de MediaSession, o tener un
+   * medio de >=20s (o en vivo). Una notificacion no cumple ninguna.
+   */
+  const isRealPlayer = (meta: MediaMetadata | null): boolean => {
+    if (meta?.title) return true
+    if (msHandlers.get('play') || msHandlers.get('pause') || msHandlers.get('nexttrack')) return true
+    for (const el of mediaEls) {
+      if (el.duration === Infinity || (isFinite(el.duration) && el.duration >= 20)) return true
+    }
+    return false
+  }
+
+  const anyPlaying = (): boolean => {
+    for (const el of mediaEls) if (!el.paused && !el.ended) return true
+    // Sin elementos vistos aun (p. ej. reproductor en shadow DOM que arranco
+    // antes que nosotros): vale lo que declare el sitio.
+    try {
+      return navigator.mediaSession.playbackState === 'playing'
+    } catch {
+      return false
+    }
+  }
+
+  /** Caratula mas grande de metadata.artwork, como URL http(s) absoluta. */
+  const artworkOf = (meta: MediaMetadata | null): string | null => {
+    const list = meta?.artwork
+    if (!list || list.length === 0) return null
+    let best: string | null = null
+    let bestPx = -1
+    for (const a of list) {
+      const px = parseInt(String(a.sizes ?? '').split('x')[0], 10) || 0
+      if (px < bestPx) continue
+      try {
+        const u = new URL(String(a.src), location.href)
+        if (u.protocol === 'https:' || u.protocol === 'http:') {
+          best = u.href.slice(0, 2000)
+          bestPx = px
+        }
+      } catch {
+        /* src invalido: probamos la siguiente */
+      }
+    }
+    return best
+  }
+
+  let lastSent = ''
+  const report = (): void => {
+    let meta: MediaMetadata | null = null
+    try {
+      meta = navigator.mediaSession.metadata
+    } catch {
+      /* sin MediaSession: seguimos con fallbacks */
+    }
+    const payload = {
+      title: String(meta?.title || document.title || '').slice(0, 200),
+      artist: String(meta?.artist ?? '').slice(0, 200),
+      artwork: artworkOf(meta),
+      playing: anyPlaying(),
+      canNext: !!msHandlers.get('nexttrack') || !!ytBtn('.ytp-next-button'),
+      canPrev: !!msHandlers.get('previoustrack') || !!ytBtn('.ytp-prev-button'),
+      real: isRealPlayer(meta)
+    }
+    const key = JSON.stringify(payload)
+    if (key === lastSent) return
+    lastSent = key
+    try {
+      ipcRenderer.send(MEDIA_META, payload)
+    } catch {
+      /* contexto destruyendose */
+    }
+  }
+  let reportTimer: ReturnType<typeof setTimeout> | null = null
+  const scheduleReport = (): void => {
+    if (reportTimer) return
+    reportTimer = setTimeout(() => {
+      reportTimer = null
+      report()
+    }, 150)
+  }
+
+  // Envoltura del prototipo: metadata/playbackState avisan al cambiar, y
+  // setActionHandler nos guarda (o borra, con null) el handler del sitio.
+  try {
+    const proto = MediaSession.prototype
+    for (const prop of ['metadata', 'playbackState'] as const) {
+      const desc = Object.getOwnPropertyDescriptor(proto, prop)
+      if (desc?.set && desc.get && desc.configurable) {
+        Object.defineProperty(proto, prop, {
+          configurable: true,
+          get() {
+            return desc.get!.call(this)
+          },
+          set(v) {
+            desc.set!.call(this, v)
+            scheduleReport()
+          }
+        })
+      }
+    }
+    const origSetAction = proto.setActionHandler
+    proto.setActionHandler = function (action, handler): void {
+      msHandlers.set(String(action), handler)
+      scheduleReport()
+      return origSetAction.call(this, action, handler)
+    }
+  } catch {
+    /* MediaSession no disponible: el chip ira solo con <video>/<audio> */
+  }
+
+  // play() registra el elemento aunque nunca se adjunte al DOM (Spotify hace
+  // eso). Encadena con la envoltura del defuser de arriba si esta activa.
+  try {
+    const origPlay = HTMLMediaElement.prototype.play
+    HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+      mediaEls.add(this)
+      scheduleReport()
+      return origPlay.apply(this)
+    }
+  } catch {
+    /* sin registro por play(): quedan los eventos de abajo */
+  }
+
+  // Cambios de estado de cualquier media del documento (fase de captura: play y
+  // pause no burbujean). Los reproductores en shadow DOM cerrado no llegan aqui,
+  // pero si por el play() envuelto de arriba.
+  for (const ev of ['play', 'pause', 'ended', 'emptied'])
+    document.addEventListener(ev, scheduleReport, true)
+
+  // Red de seguridad barata: algun estado cambia sin evento visible (pause
+  // dentro de shadow DOM, seek al final...). `report` deduplica, asi que este
+  // pulso no manda nada si no hubo cambios.
+  setInterval(report, 3000)
+
+  const pauseAll = (): void => {
+    const h = msHandlers.get('pause')
+    if (h) {
+      try {
+        h({ action: 'pause' })
+      } catch {
+        /* handler del sitio revento: pausamos a mano igual */
+      }
+    }
+    // Ademas de avisar al sitio, silencio garantizado: pausa directa de todo
+    // elemento sonando (pause() sobre pausado es no-op, no hay doble efecto).
+    for (const el of mediaEls) {
+      if (!el.paused) {
+        try {
+          el.pause()
+        } catch {
+          /* elemento en mal estado */
+        }
+      }
+    }
+  }
+
+  const playSomething = (): void => {
+    const h = msHandlers.get('play')
+    if (h) {
+      try {
+        h({ action: 'play' })
+        return
+      } catch {
+        /* handler roto: probamos con el elemento */
+      }
+    }
+    // Sin handler: reanuda el elemento pausado mas "importante" (mayor duracion
+    // finita; el streaming en vivo queda al final).
+    let best: HTMLMediaElement | null = null
+    for (const el of mediaEls) {
+      if (!el.paused || el.ended) continue
+      if (!best || (isFinite(el.duration) && el.duration > (isFinite(best.duration) ? best.duration : -1)))
+        best = el
+    }
+    if (best) void best.play().catch(() => undefined)
+  }
+
+  ipcRenderer.on(MEDIA_CONTROL, (_e, action: unknown) => {
+    if (action === 'pause') pauseAll()
+    else if (action === 'playpause') {
+      if (anyPlaying()) pauseAll()
+      else playSomething()
+    } else if (action === 'next' || action === 'prev') {
+      const h = msHandlers.get(action === 'next' ? 'nexttrack' : 'previoustrack')
+      if (h) {
+        try {
+          h({ action: action === 'next' ? 'nexttrack' : 'previoustrack' })
+        } catch {
+          /* handler del sitio revento */
+        }
+      } else {
+        // Sin handler: en YouTube pulsamos el boton real del player.
+        ytBtn(action === 'next' ? '.ytp-next-button' : '.ytp-prev-button')?.click()
+      }
+    }
+    scheduleReport()
+  })
 })()

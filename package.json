@@ -1,6 +1,6 @@
 {
   "name": "tek",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "TEK — navegador minimalista personal con estetica retro-CRT y automatizacion de la navegacion",
   "license": "MIT",
@@ -29,7 +29,9 @@
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.18.0",
     "better-sqlite3": "^12.10.0",
+    "electron-updater": "^6.8.9",
     "motion": "^11.15.0",
+    "tldts-experimental": "^7.4.2",
     "zustand": "^5.0.3"
   },
   "devDependencies": {

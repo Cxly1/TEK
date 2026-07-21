@@ -19,14 +19,52 @@ export class Favicons {
   private readonly inflight = new Set<string>()
   private saveTimer: NodeJS.Timeout | null = null
 
-  /** Carga la cache de disco (instantanea, offline). */
+  /**
+   * ¿Los bytes SON una imagen? Por magia de cabecera, porque el content-type
+   * MIENTE: Spotify sirvio texto plano ("version https://...") con header
+   * `image/vnd.microsoft.icon` y el cache quedo envenenado para siempre (la
+   * pestana pintaba un data URL indescifrable y capture/ensure ya no
+   * reintentaban porque "habia" icono).
+   */
+  private static looksLikeImage(b: Buffer): boolean {
+    if (b.length < 12) return false
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return true // PNG
+    if (b[0] === 0x00 && b[1] === 0x00 && (b[2] === 0x01 || b[2] === 0x02) && b[3] === 0x00)
+      return true // ICO / CUR
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return true // JPEG
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return true // GIF
+    if (
+      b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
+    )
+      return true // WEBP
+    if (b[0] === 0x42 && b[1] === 0x4d) return true // BMP
+    // SVG: texto que abre con <svg o <?xml (un HTML de error "<!doctype" NO pasa).
+    const head = b.subarray(0, 256).toString('utf8').replace(/^﻿/, '').trimStart().toLowerCase()
+    return head.startsWith('<svg') || head.startsWith('<?xml')
+  }
+
+  /** Carga la cache de disco (instantanea, offline), purgando lo envenenado. */
   async init(): Promise<void> {
     try {
       const raw = await readFile(this.file, 'utf8')
       const obj = JSON.parse(raw) as Record<string, string>
+      let purged = false
       for (const [h, d] of Object.entries(obj)) {
-        if (typeof d === 'string' && d.startsWith('data:')) this.map.set(h, d)
+        if (typeof d !== 'string' || !d.startsWith('data:')) continue
+        // Solo entra al mapa lo que decodifica a una imagen de verdad; el resto
+        // se descarta y el sitio se re-captura limpio en la proxima visita.
+        try {
+          if (Favicons.looksLikeImage(Buffer.from(d.slice(d.indexOf(',') + 1), 'base64'))) {
+            this.map.set(h, d)
+          } else {
+            purged = true
+          }
+        } catch {
+          purged = true
+        }
       }
+      if (purged) this.scheduleSave()
     } catch {
       /* primera vez: cache vacia */
     }
@@ -78,6 +116,9 @@ export class Favicons {
       const buf = Buffer.from(await res.arrayBuffer())
       // Descarta vacios y cosas absurdamente grandes (un favicon sano es < 200KB).
       if (buf.length < 50 || buf.length > 200_000) return
+      // Y descarta lo que no SEA una imagen, diga lo que diga el content-type
+      // (asi entro el veneno de Spotify: texto plano con header de icono).
+      if (!Favicons.looksLikeImage(buf)) return
       this.map.set(host, `data:${type};base64,${buf.toString('base64')}`)
       this.scheduleSave()
     } catch {

@@ -146,6 +146,19 @@ export const IPC = {
   pipSnap: 'pip:snap',
   pipGetState: 'pip:getState',
 
+  // Actualizacion de la app
+  updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateInstall: 'update:install',
+  updateDismiss: 'update:dismiss',
+
+  // Musica / "Ahora suena" (controla la pestana que esta sonando)
+  mediaGetState: 'media:getState',
+  mediaPlayPause: 'media:playPause',
+  mediaNext: 'media:next',
+  mediaPrev: 'media:prev',
+  mediaSetExclusive: 'media:setExclusive',
+
   // Eventos main -> renderer
   tabsState: 'tabs:state',
   downloadsState: 'downloads:state',
@@ -164,7 +177,11 @@ export const IPC = {
   /** Hay credenciales guardadas para el sitio cargado en una pestana. */
   pwFillAvailable: 'pw:fillAvailable',
   /** Estado del mini-player (Picture-in-Picture): push al shell y a la barra del mini. */
-  pipState: 'pip:state'
+  pipState: 'pip:state',
+  /** Estado de la actualizacion (hay version nueva, bajando, lista para reiniciar). */
+  updateState: 'update:state',
+  /** Estado de "ahora suena" (que pestana suena, con que metadatos). */
+  mediaState: 'media:state'
 } as const
 
 /**
@@ -187,7 +204,30 @@ export const WV = {
   /** El main enciende/apaga el modo grabacion en la pagina. */
   macroMode: 'wv:macroMode',
   /** El preload pregunta al cargar si SU pestana esta grabando. */
-  macroIsRecording: 'wv:macroIsRecording'
+  macroIsRecording: 'wv:macroIsRecording',
+  /**
+   * El preload pregunta (SINCRONO, al cargar) si este sitio esta permitido en el
+   * escudo. Si lo esta, TEK no toca la pagina EN ABSOLUTO: ni filtrado de red ni
+   * defusers de anuncios. Sincrono a proposito: la respuesta decide si se
+   * parchean globales antes de que la pagina ejecute su primer script.
+   */
+  siteUntouched: 'wv:siteUntouched',
+  /**
+   * El preload pide (SINCRONO, en document_start) los scriptlets del adblock
+   * para su URL — los `+js(...)` de las listas de uBO. Tienen que ejecutarse
+   * ANTES del primer script de la pagina (asi lo hacen uBO y Brave): el camino
+   * del adaptador de Ghostery va por webContents.executeJavaScript, que espera
+   * a did-stop-loading, y a YouTube le daba tiempo de sobra a disparar su muro
+   * anti-adblock antes de que llegara el desarme.
+   */
+  adScripts: 'wv:adScripts',
+  /**
+   * El preload reporta los metadatos de MediaSession de su pagina (titulo,
+   * artista, caratula, si esta sonando y que acciones soporta el sitio).
+   */
+  mediaMeta: 'wv:mediaMeta',
+  /** El main manda una accion de reproduccion a la pagina (playpause/pause/next/prev). */
+  mediaControl: 'wv:mediaControl'
 } as const
 
 /** Metadatos de una pestana, tal como el renderer los necesita para pintar. */
@@ -581,6 +621,62 @@ export interface PipState {
   favicon?: string | null
 }
 
+// --- Actualizacion de la app -----------------------------------------------
+
+/**
+ * En que punto va la actualizacion. NADA se descarga sin decir que si: de
+ * `available` solo se sale por decision de la persona (ver Updater.ts).
+ */
+export type UpdatePhase =
+  | 'idle'
+  | 'checking'
+  /** Hay version nueva y esperamos respuesta: descargar o ahora no. */
+  | 'available'
+  | 'downloading'
+  /** Descargada y verificada; se instala al cerrar TEK (o reiniciando ya). */
+  | 'ready'
+  | 'error'
+
+export interface UpdateState {
+  phase: UpdatePhase
+  /** Version que hay disponible (o la que se descargo). '' si no hay. */
+  version: string
+  /** Notas de la release, recortadas. Puede venir vacio. */
+  notes: string
+  /** Progreso 0-100 mientras `phase === 'downloading'`. */
+  percent: number
+  /** Motivo legible cuando `phase === 'error'`. */
+  error: string
+}
+
+// --- Musica: "Ahora suena" -------------------------------------------------
+
+/** Lo que esta sonando (o lo ultimo que sono), para el chip de la barra. */
+export interface NowPlaying {
+  /** Pestana duena de la musica (para saltar a ella / mandarle controles). */
+  tabId: string
+  /** Titulo de la cancion o video (de navigator.mediaSession, con fallback al <title>). */
+  title: string
+  /** Artista (o '' si el sitio no lo reporta). */
+  artist: string
+  /** URL http(s) de la caratula, o null si no hay. */
+  artwork: string | null
+  /** true si esta sonando AHORA; false = pausado (el chip ofrece reanudar). */
+  playing: boolean
+  /** El sitio registro un handler de "siguiente" (se puede saltar de cancion). */
+  canNext: boolean
+  canPrev: boolean
+  /** Host del sitio que suena ("open.spotify.com", "www.youtube.com"...). */
+  host: string
+}
+
+export interface MediaState {
+  /** null = nada suena ni ha sonado (el chip no se pinta). */
+  now: NowPlaying | null
+  /** "Una sola pestana sonando a la vez" activado. */
+  exclusive: boolean
+}
+
 // --- Buscar en pagina / comandos de UI -------------------------------------
 
 /** Resultado de "buscar en pagina". */
@@ -598,7 +694,7 @@ export interface FindOptions {
 }
 
 /** Accion de UI que el main pide al renderer cuando la pagina tiene el foco. */
-export type UiCommand = 'palette' | 'find' | 'newtab'
+export type UiCommand = 'palette' | 'find' | 'newtab' | 'address'
 
 /** API que el preload expone en window.tek. */
 export interface TekApi {
@@ -821,6 +917,29 @@ export interface TekApi {
     state(): Promise<PipState>
     /** Suscribe al estado del mini. Devuelve funcion para desuscribir. */
     onState(cb: (s: PipState) => void): () => void
+  }
+  /** Actualizacion de TEK. Solo funciona en la app instalada, no en dev. */
+  update: {
+    /** Busca version nueva AHORA (lo pidio la persona). No descarga nada. */
+    check(): Promise<UpdateState>
+    /** Descarga la version ofrecida. Solo se llama tras un si explicito. */
+    download(): Promise<UpdateState>
+    /** Cierra TEK y aplica la actualizacion ya descargada. */
+    install(): Promise<void>
+    /** "Ahora no": no vuelve a ofrecer sola esta version (la siguiente si). */
+    dismiss(): Promise<UpdateState>
+    onState(cb: (s: UpdateState) => void): () => void
+  }
+  /** Musica: el chip "Ahora suena" y el control de la pestana que suena. */
+  media: {
+    state(): Promise<MediaState>
+    /** Pausa/reanuda la pestana que suena (tambien atado a la tecla multimedia). */
+    playPause(): Promise<void>
+    next(): Promise<void>
+    prev(): Promise<void>
+    /** Activa/desactiva "una sola pestana sonando a la vez". Devuelve el estado. */
+    setExclusive(on: boolean): Promise<MediaState>
+    onState(cb: (s: MediaState) => void): () => void
   }
   /** Suscribe al estado de pestanas. Devuelve una funcion para desuscribir. */
   onTabsState(cb: (state: TabsState) => void): () => void

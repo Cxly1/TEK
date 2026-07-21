@@ -1,0 +1,93 @@
+/* Aviso de actualizacion. Mismo lenguaje que el toast de contrasenas: pildora
+   abajo-centro sobre la costura dorada. El `bottom: 28px` debe cuadrar con el
+   `extra` que se le pasa a useReserveBottom en UpdateToast.tsx. */
+.up-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 56;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px 14px 20px;
+  border: 1px solid rgba(244, 213, 138, 0.4);
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  max-width: min(640px, 92vw);
+}
+.up-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow: hidden;
+}
+.up-title {
+  font-size: 13px;
+  color: var(--text-hi);
+}
+.up-notes {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-lo);
+  /* Las notas de la release pueden ser largas: dos lineas y a otra cosa. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.up-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.up-btn {
+  flex: none;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.up-btn:hover {
+  border-color: #3a4046;
+  color: var(--text-hi);
+}
+.up-btn.is-primary {
+  border-color: rgba(244, 213, 138, 0.5);
+  background: rgba(227, 179, 65, 0.08);
+  color: var(--gold-bright);
+}
+.up-btn.is-primary:hover {
+  border-color: var(--gold-bright);
+  background: rgba(227, 179, 65, 0.16);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+/* Barra de progreso de la descarga. Ancho por `width` (no transform) porque
+   aqui el valor es real y no una animacion indeterminada. */
+.up-bar {
+  width: 100%;
+  min-width: 260px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.up-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+  transition: width 0.25s ease;
+}

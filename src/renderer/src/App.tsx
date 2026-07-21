@@ -15,6 +15,7 @@ import { AutomationPanel } from './automation/AutomationPanel'
 import { AutoToast } from './automation/AutoToast'
 import { PasswordsPanel } from './passwords/PasswordsPanel'
 import { PasswordToasts } from './passwords/PasswordToasts'
+import { UpdateToast } from './update/UpdateToast'
 import { ToolsMenu } from './shell/ToolsMenu'
 import { Welcome } from './onboarding/Welcome'
 import { Tour } from './onboarding/Tour'
@@ -66,7 +67,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const st = useTek.getState()
     void window.tek.dev.servers().then(st.setDevServers)
+    void window.tek.media.state().then(st.setMedia)
     const offs = [
+      window.tek.media.onState((m) => useTek.getState().setMedia(m)),
       window.tek.dev.onServers((list) => useTek.getState().setDevServers(list)),
       window.tek.auto.onToast((t) => useTek.getState().setRecipeToast(t)),
       window.tek.auto.onRecState((rec) => useTek.getState().setRecording(rec)),
@@ -89,7 +92,12 @@ export function App(): React.JSX.Element {
     const offUi = window.tek.onUiCommand((cmd) => {
       const st = useTek.getState()
       if (cmd === 'palette') st.togglePalette()
-      else if (cmd === 'find') {
+      else if (cmd === 'address') {
+        // Ctrl+L: la paleta hace de barra de direcciones, con la URL de la
+        // pestana activa ya seleccionada para copiarla o reemplazarla.
+        const a = st.tabs.find((t) => t.id === st.activeId)
+        st.openPalette(a && !a.blank ? a.url : '', true)
+      } else if (cmd === 'find') {
         const a = st.tabs.find((t) => t.id === st.activeId)
         if (a && !a.blank) st.openFind()
       } else if (cmd === 'newtab') {
@@ -97,9 +105,11 @@ export function App(): React.JSX.Element {
         st.openPalette()
       }
     })
+    const offUpdate = window.tek.update.onState((s) => useTek.getState().setUpdate(s))
     return () => {
       offFound()
       offUi()
+      offUpdate()
     }
   }, [])
 
@@ -140,7 +150,12 @@ export function App(): React.JSX.Element {
         if (inShell) togglePalette()
       } else if (mod && k === 'l') {
         e.preventDefault()
-        if (inShell) openPalette()
+        if (inShell) {
+          // Espejo del 'address' de arriba: con el chrome enfocado, Ctrl+L
+          // tambien trae la URL actual seleccionada.
+          const a = st.tabs.find((t) => t.id === st.activeId)
+          openPalette(a && !a.blank ? a.url : '', true)
+        }
       } else if (mod && e.shiftKey && k === 'p') {
         e.preventDefault()
         if (inShell) void window.tek.pip.toggle()
@@ -269,6 +284,7 @@ export function App(): React.JSX.Element {
         )}
       </AnimatePresence>
       {phase === 'shell' && <PasswordToasts />}
+      {phase === 'shell' && <UpdateToast />}
       <DownloadToast />
     </>
   )

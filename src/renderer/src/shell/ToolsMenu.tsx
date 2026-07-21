@@ -18,6 +18,9 @@ export function ToolsMenu(): React.JSX.Element {
   const openAutomation = useTek((s) => s.openAutomation)
   const openBrain = useTek((s) => s.openBrain)
   const openTour = useTek((s) => s.openTour)
+  const setUpdateNote = useTek((s) => s.setUpdateNote)
+  const exclusive = useTek((s) => s.media.exclusive)
+  const setMedia = useTek((s) => s.setMedia)
   const activeDl = useTek((s) => s.downloads.filter((d) => d.state === 'progressing').length)
   const unseenDone = useTek((s) =>
     s.downloads.filter(
@@ -38,13 +41,40 @@ export function ToolsMenu(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [closeToolsMenu])
 
+  // Buscar a mano: el main solo MIRA (no descarga). Si no hay nada nuevo no
+  // llega ningun evento, asi que el "ya estas al dia" lo damos con el resultado
+  // que devuelve la llamada; el resto de fases las pinta el toast solo.
+  const checkUpdates = (): void => {
+    closeToolsMenu()
+    setUpdateNote('Buscando actualizaciones…')
+    void window.tek.update.check().then((s) => {
+      if (s.phase === 'idle') setUpdateNote('Ya tienes la última versión de TEK.')
+      else setUpdateNote('')
+    })
+  }
+
   const items: { id: string; icon: string; label: string; sub: string; run: () => void; badge?: number }[] = [
     { id: 'history', icon: '↺', label: 'Historial', sub: 'lo que has visitado', run: openHistory },
     { id: 'downloads', icon: '↧', label: 'Descargas', sub: 'tus archivos', run: openDownloads, badge: dlBadge },
     { id: 'pw', icon: '⚿', label: 'Contraseñas', sub: 'vault cifrado', run: openPasswords },
     { id: 'auto', icon: '⚡', label: 'Automatización', sub: 'recetas · workspaces · macros', run: openAutomation },
     { id: 'brain', icon: '✦', label: 'Lo que TEK sabe de ti', sub: 'tu perfil', run: openBrain },
-    { id: 'tour', icon: '◎', label: 'Repetir tutorial', sub: 'el paseo guiado · y tu nombre', run: openTour }
+    {
+      id: 'audio1',
+      icon: '♫',
+      label: 'Una pestaña sonando a la vez',
+      sub: exclusive ? 'activado — al sonar una, TEK pausa las demás' : 'desactivado',
+      // Toggle en sitio: el menu se queda abierto para ver el cambio.
+      run: () => void window.tek.media.setExclusive(!exclusive).then(setMedia)
+    },
+    { id: 'tour', icon: '◎', label: 'Repetir tutorial', sub: 'el paseo guiado · y tu nombre', run: openTour },
+    {
+      id: 'update',
+      icon: '⟲',
+      label: 'Buscar actualizaciones',
+      sub: 'nada se descarga sin permiso',
+      run: checkUpdates
+    }
   ]
 
   return (

@@ -21,6 +21,7 @@ import {
   type SiteScript,
   type Snippet,
   type SnippetResult,
+  type UpdateState,
   type UserProfile,
   type Watcher,
   type Workspace
@@ -34,6 +35,8 @@ import { Passwords } from './features/Passwords'
 import { Permissions } from './features/Permissions'
 import { Profile } from './features/Profile'
 import { Privacy } from './features/Privacy'
+import { Updater } from './features/Updater'
+import { Media } from './features/Media'
 import { Settings } from './features/dev/Settings'
 import { DevRadar } from './features/dev/DevRadar'
 import { Automation } from './features/dev/Automation'
@@ -65,6 +68,8 @@ let passwords: Passwords | null = null
 let permissions: Permissions | null = null
 let privacy: Privacy | null = null
 let userProfile: Profile | null = null
+let updater: Updater | null = null
+let media: Media | null = null
 
 /** ¿El host es un server local? (auto-DevTools solo aplica ahi). */
 function isLocalHost(host: string): boolean {
@@ -138,6 +143,19 @@ function createWindow(): void {
   views = new ViewManager(mainWindow, brain!, adblock!, favicons!, loadPipChrome)
   wireAutomation(views)
 
+  // Musica: Media necesita mapear webContents<->pestana, y ViewManager le avisa
+  // cuando una pestana empieza a sonar (modo "una sola pestana a la vez").
+  if (media) {
+    const v = views
+    media.attach({
+      wcOfTab: (id) => v.wcOfTab(id),
+      tabIdOfWcId: (wcId) => v.tabIdOfWcId(wcId),
+      audibleTabs: () => v.audibleTabs(),
+      activeWc: () => v.activeWc()
+    })
+    views.onAudibleStart = (tabId) => media?.onAudible(tabId)
+  }
+
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('closed', () => {
     views?.dispose()
@@ -155,6 +173,11 @@ function createWindow(): void {
     passwords?.dispose()
     permissions?.dispose()
     userProfile?.dispose()
+    updater?.dispose()
+    // Media sobrevive a la ventana (teclas globales), pero suelta las deps: sin
+    // pestanas no hay destino y todo se vuelve no-op limpio.
+    media?.attach(null)
+    updater = null
     userProfile = null
     permissions = null
     privacy = null
@@ -325,6 +348,33 @@ function registerIpc(): void {
   )
   ipcMain.handle(IPC.profileSet, (e, patch: Partial<UserProfile>) =>
     fromShell(e) ? userProfile?.set(patch) ?? DEFAULT_PROFILE : DEFAULT_PROFILE
+  )
+
+  // --- Actualizacion de la app ---------------------------------------------
+  // Nada se descarga sin un si explicito: `updateCheck` solo mira, y es
+  // `updateDownload` (que solo dispara la UI tras el clic) quien baja.
+  const IDLE_UPDATE: UpdateState = { phase: 'idle', version: '', notes: '', percent: 0, error: '' }
+  ipcMain.handle(IPC.updateCheck, (e) =>
+    fromShell(e) ? updater?.check(true) ?? IDLE_UPDATE : IDLE_UPDATE
+  )
+  ipcMain.handle(IPC.updateDownload, (e) =>
+    fromShell(e) ? updater?.download() ?? IDLE_UPDATE : IDLE_UPDATE
+  )
+  ipcMain.handle(IPC.updateInstall, (e) => {
+    if (fromShell(e)) updater?.install()
+  })
+  ipcMain.handle(IPC.updateDismiss, (e) =>
+    fromShell(e) ? updater?.dismiss() ?? IDLE_UPDATE : IDLE_UPDATE
+  )
+
+  // Musica: chip "Ahora suena" + control de la pestana que suena
+  const IDLE_MEDIA = { now: null, exclusive: false }
+  ipcMain.handle(IPC.mediaGetState, () => media?.state() ?? IDLE_MEDIA)
+  ipcMain.handle(IPC.mediaPlayPause, () => media?.control('playpause'))
+  ipcMain.handle(IPC.mediaNext, () => media?.control('next'))
+  ipcMain.handle(IPC.mediaPrev, () => media?.control('prev'))
+  ipcMain.handle(IPC.mediaSetExclusive, (e, on: boolean) =>
+    fromShell(e) && media ? media.setExclusive(on) : IDLE_MEDIA
   )
 
   ipcMain.handle(IPC.sessionPeek, () => views?.peek() ?? null)
@@ -523,8 +573,43 @@ function registerIpc(): void {
     sendToShell(IPC.pwFillAvailable, { tabId, host, creds })
   })
   ipcMain.on(WV.macroEvent, (e, step: unknown) => macros?.handleEvent(e.sender, step))
+  // Metadatos de MediaSession de una pagina (titulo/artista/caratula del chip).
+  ipcMain.on(WV.mediaMeta, (e, payload: unknown) => media?.handleMeta(e.sender, payload))
   ipcMain.handle(WV.macroIsRecording, (e) => macros?.isRecordingWc(e.sender.id) ?? false)
+  // "Permitir sitio" en el escudo significa NO TOCAR: ni red ni defusers. El
+  // preload lo pregunta sincrono antes de parchear nada (ver WV.siteUntouched).
+  ipcMain.on(WV.siteUntouched, (e, host: unknown) => {
+    const h = typeof host === 'string' ? host.replace(/^www\./, '') : ''
+    e.returnValue = !!h && !!adblock?.siteAllowed(h)
+  })
+  // Scriptlets del adblock en document_start: la pieza que mata el muro
+  // anti-adblock de YouTube (ver WV.adScripts y Adblock.scriptsFor).
+  ipcMain.on(WV.adScripts, (e, url: unknown) => {
+    e.returnValue = typeof url === 'string' ? (adblock?.scriptsFor(url) ?? []) : []
+  })
 }
+
+/**
+ * FedCM APAGADO a proposito (antes de que arranque Chromium; despues no sirve).
+ *
+ * FedCM es la API nueva con la que Google hace "Iniciar sesion con Google". La
+ * pinta el NAVEGADOR: es Chromium quien dibuja el selector de cuentas. Electron
+ * no trae esa interfaz, asi que `navigator.credentials.get({identity})` siempre
+ * acaba en `NetworkError: Error retrieving a token` y la libreria de Google se
+ * rinde sin decir nada — el boton "Continuar con Google" no hacia NADA
+ * (diagnosticado en Pinterest, log `[GSI_LOGGER]` + "Prompt dismissed").
+ *
+ * Apagandolo, la libreria de Google detecta que no hay FedCM y cae al flujo
+ * clasico de popup, que en TEK SI funciona (es el que ya arreglamos con el
+ * setWindowOpenHandler que conserva `window.opener`). No perdemos nada: FedCM
+ * aqui nunca llego a funcionar.
+ */
+// HardwareMediaKeyHandling tambien fuera: con el activo, Chromium se registra
+// las teclas multimedia del sistema y NUNCA llegan al globalShortcut de Media
+// (conflicto documentado en Electron). Las teclas las enruta TEK, que sabe cual
+// es la pestana que suena; el manejo interno de Chromium elige "su" media
+// session y con varias pestanas se equivoca.
+app.commandLine.appendSwitch('disable-features', 'FedCm,HardwareMediaKeyHandling')
 
 // Instancia unica: dos TEK sobre el mismo perfil corrompen la cache de Chromium
 // y arriesgan la base del cerebro. La segunda instancia enfoca la primera y muere.
@@ -577,6 +662,16 @@ app.whenReady().then(async () => {
   bridge = new AgentBridge()
   passwords = new Passwords()
   userProfile = new Profile()
+
+  // Actualizacion: empuja su estado al shell y el shell decide que enseñar.
+  // Solo hace algo en TEK instalado (en dev no hay app-update.yml).
+  updater = new Updater((s) => sendToShell(IPC.updateState, s))
+  updater.start()
+
+  // Musica: "ahora suena", teclas multimedia globales y "una pestana a la vez".
+  media = new Media()
+  media.onState = (s) => sendToShell(IPC.mediaState, s)
+  media.registerKeys()
 
   // Permisos de sitio: SIN este handler Electron CONCEDE todo por defecto
   // (camara, micro, ubicacion...). Deny-by-default + dialogo recordado.
@@ -635,4 +730,10 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// Los globalShortcut deben soltarse al salir (recomendacion de Electron).
+app.on('will-quit', () => {
+  media?.dispose()
+  media = null
 })

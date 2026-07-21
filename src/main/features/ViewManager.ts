@@ -159,6 +159,9 @@ export class ViewManager {
   onNavigate: ((tabId: string, url: string, host: string, wc: Electron.WebContents) => void) | null =
     null
   onDomReady: ((tabId: string, wc: Electron.WebContents) => void) | null = null
+  /** Una pestana empezo a sonar (mismo instante que enciende su altavoz). Lo
+   *  consume Media para el "una sola pestana sonando a la vez". */
+  onAudibleStart: ((tabId: string) => void) | null = null
   /** ¿Abrir DevTools solas al navegar a este host? (ajuste localhost). */
   shouldAutoDevtools: ((host: string) => boolean) | null = null
   /** UA default de la app (las pestanas vuelven a ella al salir de un host quisquilloso). */
@@ -411,8 +414,11 @@ export class ViewManager {
     // La pagina declara su favicon: lo cacheamos (accesos directos + pestanas).
     wc.on('page-favicon-updated', (_e, favicons) => {
       const icon = favicons?.[0]
-      if (tab.group && icon) {
-        void this.favicons.capture(tab.group, icon).then(() => {
+      // Host AL MOMENTO del webContents, no tab.group: el evento puede llegar
+      // antes de que regroup() ponga el grupo tras una navegacion.
+      const host = hostKey(wc.getURL()) || tab.group
+      if (host && icon) {
+        void this.favicons.capture(host, icon).then(() => {
           if (tab.id === this.mini.tabId) this.mini.updateMeta({ favicon: this.favicons.get(tab.group) })
           this.emit()
         })
@@ -421,6 +427,12 @@ export class ViewManager {
     // Cuando empieza a sonar audio en un sitio de musica, lo aprendemos.
     wc.on('media-started-playing', () => {
       if (isMusicHost(tab.group)) this.brain.recordMusic(tab.group, wc.getURL(), wc.getTitle())
+      // Y garantizamos favicon del sitio sonando (Spotify declara el suyo de
+      // formas que a veces no se dejan capturar; el /favicon.ico responde bien).
+      // Sin esto, la pestana con musica y el "ahora suena" salian sin logo si el
+      // host no estaba en los accesos directos (ensure solo corria para el dial).
+      const h = hostKey(wc.getURL())
+      if (h && !this.favicons.get(h)) void this.favicons.ensure(h).then(() => this.emit())
     })
     // El estado de audio cambia: actualiza el indicador CON HISTERESIS, asi no
     // parpadea en los silencios momentaneos del contenido (entre dialogos, etc.).
@@ -565,6 +577,7 @@ export class ViewManager {
       if (!tab.audible) {
         tab.audible = true
         this.emit()
+        this.onAudibleStart?.(tab.id)
       }
     } else if (tab.audible && !tab.audibleOffTimer) {
       tab.audibleOffTimer = setTimeout(() => {
@@ -728,6 +741,11 @@ export class ViewManager {
   wcOfTab(id: string): Electron.WebContents | null {
     const tab = this.tabs.find((t) => t.id === id)
     return tab ? this.liveWc(tab) : null
+  }
+
+  /** Pestanas sonando ahora mismo (para el "una sola pestana a la vez"). */
+  audibleTabs(): { id: string; wc: Electron.WebContents | null }[] {
+    return this.tabs.filter((t) => t.audible).map((t) => ({ id: t.id, wc: this.liveWc(t) }))
   }
 
   /** Camino inverso: de que pestana es este webContents (por su id de Electron). */
@@ -1141,10 +1159,12 @@ export class ViewManager {
       e.preventDefault()
       this.sendUi('find')
     }
-    // Paleta de comandos (Ctrl+K / Ctrl+L).
+    // Paleta de comandos (Ctrl+K) y barra de direcciones (Ctrl+L). Se separan
+    // porque Ctrl+L tiene que abrirla con la URL actual ya seleccionada, que es
+    // como se copia la direccion con el teclado en cualquier navegador.
     else if (ctrl && (low === 'k' || low === 'l')) {
       e.preventDefault()
-      this.sendUi('palette')
+      this.sendUi(low === 'l' ? 'address' : 'palette')
     }
     // Mini-player (Ctrl+Shift+P): manda la pestana al mini, o lo cierra si ya hay uno.
     else if (ctrl && shift && low === 'p') {

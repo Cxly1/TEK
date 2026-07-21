@@ -30,6 +30,17 @@ afterSign: build/afterSign.cjs
 # Dejar que electron-builder lo reconstruya lo rompe con pnpm.
 npmRebuild: false
 
+# De donde se baja la actualizacion automatica. electron-builder ya lo deducia
+# del remote de git, pero explicito es lo que acaba dentro del paquete como
+# `app-update.yml`, que es lo que lee electron-updater al arrancar.
+# OJO AL PUBLICAR: hay que subir `latest.yml` al release JUNTO al .exe. Sin el,
+# electron-updater da 404 y nadie se entera de que hay version nueva. (Hasta
+# v0.1.1 no se subia a proposito, porque no habia autoactualizacion.)
+publish:
+  provider: github
+  owner: Cxly1
+  repo: TEK
+
 win:
   target:
     - nsis

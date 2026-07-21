@@ -22,7 +22,14 @@ import { app } from 'electron'
 // ESCRITORIO; con el token Electron degrada a la pagina "preview" estilo movil
 // ("Abrir la aplicacion" + barra inferior). El DRM (musica via Widevine) y el
 // bloqueo de anuncios se resuelven aparte (CDM + defuser en webview.ts).
-const PICKY_HOSTS = ['whatsapp.com', 'netflix.com', 'spotify.com']
+// pinterest.com: vive incrustado en apps moviles, asi que husmea el UA para
+// decidir si eres un "navegador embebido". Con los tokens tek/Electron caia en
+// esa rama —mucho menos probada— y su propia app de React petaba al arrancar
+// ("Minified React error #308": leia un Context fuera del render, en SU codigo)
+// ademas de hacer el login de Google por un camino que no terminaba nunca.
+// Descartados antes de llegar aqui: el adblock (falla igual con el sitio
+// permitido) y el defuser de webview.ts (esta acotado a hosts de YouTube).
+const PICKY_HOSTS = ['whatsapp.com', 'netflix.com', 'spotify.com', 'pinterest.com']
 
 let cached: string | null = null
 

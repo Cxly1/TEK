@@ -3,6 +3,7 @@ import { useTek, useActiveTab } from '@/store'
 import { hostKey, prettyHost, type TabMeta } from '@shared/ipc'
 import { groupColor } from '@/lib/groupColor'
 import { AdblockShield } from '@/adblock/AdblockShield'
+import { NowPlaying } from './NowPlaying'
 import '../automation/automation.css'
 
 /** Agrupa pestanas contiguas del mismo dominio (ya vienen ordenadas del main). */
@@ -121,6 +122,19 @@ export function TopBar(): React.JSX.Element {
   // la protagonista): ocultamos toda la fila de navegacion. Reaparece al abrir
   // una web. Asi solo hay UNA barra de busqueda.
   const showNav = !!active && !active.blank
+
+  // Copiar la direccion: la barra muestra solo el host, pero al portapapeles va
+  // la URL COMPLETA (con su ruta), que es el enlace que la gente quiere pegar.
+  const [copied, setCopied] = useState(false)
+  const copyUrl = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    const url = active?.url
+    if (!url) return
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1400)
+    })
+  }
 
   const newTab = (): void => {
     void window.tek.tabs.create()
@@ -353,17 +367,67 @@ export function TopBar(): React.JSX.Element {
           </button>
         </div>
 
-        <button
-          className="tb-host no-drag"
-          data-tour="address"
-          onClick={() => openPalette()}
-          title="Ir a… (⌘K)"
-        >
-          <span className={`tb-dot ${active?.loading ? 'is-loading' : ''}`} />
-          <span className="tb-host-text">{host || 'Buscar o escribir una dirección'}</span>
-          <span className="tb-k">⌘K</span>
-        </button>
+        {/*
+          La barra no es un input: el "campo" de verdad es la paleta. Pero la
+          direccion tiene que poder COPIARSE, asi que el clic abre la paleta con
+          la URL completa ya seleccionada (Ctrl+C la copia, escribir la sustituye)
+          y ademas hay un boton de copiar que aparece al pasar por encima.
+          Contenedor <div> y no <button>: un boton dentro de otro no es valido.
+        */}
+        <div className={`tb-host no-drag ${copied ? 'is-copied' : ''}`} data-tour="address">
+          <button
+            className="tb-host-main"
+            onClick={() => openPalette(active?.url ?? '', true)}
+            title="Ir a… (⌘K)"
+          >
+            <span className={`tb-dot ${active?.loading ? 'is-loading' : ''}`} />
+            <span className="tb-host-text">{host || 'Buscar o escribir una dirección'}</span>
+          </button>
+          <span className="tb-hint">
+            <span className="tb-k">⌘K</span>
+            <button
+              className="tb-copy"
+              onClick={copyUrl}
+              aria-label="Copiar dirección"
+              title={copied ? 'Copiado' : 'Copiar dirección'}
+            >
+              {copied ? (
+                <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden>
+                  <path
+                    d="M4 12.5l5 5L20 6.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden>
+                  <rect
+                    x="9"
+                    y="9"
+                    width="11"
+                    height="11"
+                    rx="2.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  />
+                  <path
+                    d="M15 5.5A2.5 2.5 0 0012.5 3h-7A2.5 2.5 0 003 5.5v7A2.5 2.5 0 005.5 15"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              )}
+            </button>
+          </span>
+        </div>
 
+        <NowPlaying />
         <PipButton />
         <AdblockShield />
       </div>

@@ -622,12 +622,75 @@
 .tb-host:hover {
   border-color: rgba(244, 213, 138, 0.45);
 }
+/* El boton que ocupa la barra: es quien abre la paleta. Reset propio porque
+   .tb-host dejo de ser <button> para poder llevar el de copiar dentro. */
+.tb-host-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: text;
+}
 .tb-host-text {
   flex: 1;
+  min-width: 0;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Ranura con ⌘K y el boton de copiar SUPERPUESTOS: se cambian por opacidad,
+   asi no hay salto de layout al pasar el raton. */
+.tb-hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 30px;
+  height: 22px;
+}
+.tb-hint > * {
+  position: absolute;
+  right: 0;
+  transition: opacity 0.15s ease;
+}
+.tb-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-lo);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+.tb-host:hover .tb-k,
+.tb-host.is-copied .tb-k {
+  opacity: 0;
+}
+.tb-host:hover .tb-copy,
+.tb-host.is-copied .tb-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tb-copy:hover {
+  color: var(--gold-bright);
+  background: rgba(255, 255, 255, 0.07);
+}
+.tb-host.is-copied .tb-copy {
+  color: var(--gold-bright);
 }
 .tb-host .tb-dot {
   width: 7px;
@@ -1018,5 +1081,144 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-lo);
+}
+
+/* --- Controles "Ahora suena" (junto al boton del mini-player) ---------------
+   Sin chip, sin texto: tres botones fantasma. El play/pausa morphea
+   triangulo<->barras animando la propiedad CSS `d` (Chromium interpola paths
+   de estructura identica — el patron del icono de YouTube). */
+.tb-media {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+.tb-mbtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.tb-mbtn:hover {
+  color: var(--text-hi);
+  background: rgba(255, 255, 255, 0.07);
+}
+/* Sin soporte del sitio: presente pero apagado (consistencia > desaparecer). */
+.tb-mbtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.tb-mbtn:disabled:hover {
+  color: var(--text-lo);
+  background: none;
+}
+.tb-mbtn svg {
+  transition: transform 0.12s ease;
+}
+.tb-mbtn:active svg {
+  transform: scale(0.86);
+}
+/* Empujon direccional al pulsar (micro-interaccion). */
+.tb-mprev:active svg {
+  transform: scale(0.86) translateX(-1.5px);
+}
+.tb-mnext:active svg {
+  transform: scale(0.86) translateX(1.5px);
+}
+/* El morph: triangulo (pausado) <-> dos barras (sonando). Dos subpaths de 4
+   puntos en ambos estados; si cambian los conteos, el morph se rompe. */
+.tb-mplay path {
+  d: path('M8 5 L8 19 L13.5 15.5 L13.5 8.5 Z M13.5 8.5 L13.5 15.5 L19 12 L19 12 Z');
+  transition: d 0.22s ease;
+}
+.is-playing .tb-mplay path {
+  d: path('M8 5 L8 19 L11.5 19 L11.5 5 Z M15.5 5 L15.5 19 L19 19 L19 5 Z');
+}
+.is-playing .tb-mplay {
+  color: var(--gold);
+}
+
+/* --- "Ahora suena" en el lienzo de pestana nueva ---------------------------
+   La fila de navegacion no existe en blanco: misma esquina, pieza propia con
+   el logo del sitio + espectro (reusa el @keyframes eq de la music-card). */
+.canvas-np {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+.canvas-np-site {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.canvas-np-favicon {
+  width: 18px;
+  height: 18px;
+  /* Redondeado suave, NO circulo: recortar un favicon cuadrado a circulo se
+     come el logo (y el de Spotify ya es circular de por si). */
+  border-radius: 4px;
+  object-fit: cover;
+}
+.canvas-np-note {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  color: var(--gold);
+  background: radial-gradient(circle at center, rgba(212, 175, 55, 0.35) 0 3px, #141416 3px 100%);
+}
+.canvas-np-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+.canvas-np-eq i {
+  width: 2.5px;
+  background: var(--gold);
+  border-radius: 2px;
+  animation: eq 1s ease-in-out infinite;
+}
+.canvas-np-eq i:nth-child(1) {
+  height: 7px;
+  animation-delay: -0.2s;
+}
+.canvas-np-eq i:nth-child(2) {
+  height: 13px;
+  animation-delay: -0.5s;
+}
+.canvas-np-eq i:nth-child(3) {
+  height: 9px;
+}
+.canvas-np-eq i:nth-child(4) {
+  height: 12px;
+  animation-delay: -0.7s;
+}
+/* Pausado: el espectro se congela abajo (nada late). */
+.canvas-np:not(.is-playing) .canvas-np-eq i {
+  animation-play-state: paused;
+  transform: scaleY(0.35);
 }
 

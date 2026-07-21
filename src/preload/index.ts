@@ -7,10 +7,12 @@ import {
   type DevServer,
   type FillAvailable,
   type FindResult,
+  type MediaState,
   type PasswordOffer,
   type PipState,
   type RecipeToastInfo,
-  type UiCommand
+  type UiCommand,
+  type UpdateState
 } from '@shared/ipc'
 
 /** Suscripcion estandar a un evento main->renderer. Devuelve el des-suscriptor. */
@@ -162,6 +164,21 @@ const api: TekApi = {
     snap: () => ipcRenderer.invoke(IPC.pipSnap),
     state: () => ipcRenderer.invoke(IPC.pipGetState),
     onState: (cb: (s: PipState) => void) => on(IPC.pipState, cb)
+  },
+  update: {
+    check: () => ipcRenderer.invoke(IPC.updateCheck),
+    download: () => ipcRenderer.invoke(IPC.updateDownload),
+    install: () => ipcRenderer.invoke(IPC.updateInstall),
+    dismiss: () => ipcRenderer.invoke(IPC.updateDismiss),
+    onState: (cb: (s: UpdateState) => void) => on(IPC.updateState, cb)
+  },
+  media: {
+    state: () => ipcRenderer.invoke(IPC.mediaGetState),
+    playPause: () => ipcRenderer.invoke(IPC.mediaPlayPause),
+    next: () => ipcRenderer.invoke(IPC.mediaNext),
+    prev: () => ipcRenderer.invoke(IPC.mediaPrev),
+    setExclusive: (on) => ipcRenderer.invoke(IPC.mediaSetExclusive, on),
+    onState: (cb: (s: MediaState) => void) => on(IPC.mediaState, cb)
   },
   onTabsState: (cb: (state: TabsState) => void) => {
     const listener = (_e: unknown, state: TabsState): void => cb(state)
