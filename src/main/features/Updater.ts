@@ -21,8 +21,8 @@ import { JsonStore } from './dev/jsonStore'
  * Lo que se dice "ahora no" se recuerda por VERSION: no se vuelve a ofrecer esa,
  * pero la siguiente si. Pedirlo a mano desde el menu borra ese olvido.
  *
- * PERO "ahora no" NO te deja a ciegas (arreglado el 2026-07-27, lo pidio Migue
- * tras enterarse de la 0.3.0 buscandola el mismo): aparte de la fase, que es
+ * PERO "ahora no" NO te deja a ciegas (arreglado el 2026-07-27, tras un caso
+ * real de enterarse de una version nueva buscandola): aparte de la fase, que es
  * pasajera, guardamos `pending` — la version publicada mas nueva que la tuya.
  * Eso sigue siendo verdad aunque cierres el aviso y aunque reinicies, y es lo
  * que mantiene encendido el punto del megafono hasta que actualices. Antes, el

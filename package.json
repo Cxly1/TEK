@@ -1,6 +1,6 @@
 {
   "name": "tek",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "TEK — navegador minimalista personal con estetica retro-CRT y automatizacion de la navegacion",
   "license": "MIT",

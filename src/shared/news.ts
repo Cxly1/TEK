@@ -31,6 +31,15 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    version: '0.3.1',
+    date: '2026-07-27',
+    title: 'Que no se te pase una versión nueva',
+    items: [
+      'El aviso ya no se pierde: el megáfono sigue encendido hasta que actualices.',
+      'Aquí arriba te aparece la versión que te falta, con su botón para instalarla.'
+    ]
+  },
+  {
     version: '0.3.0',
     date: '2026-07-24',
     title: 'Zoom nuevo y arreglos',
