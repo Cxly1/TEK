@@ -10,13 +10,12 @@ import { ipcRenderer } from 'electron'
  * con los scriptlets de uBO (el metodo real de Brave) y era justo lo que YouTube
  * detectaba. Ahora YouTube se trata como cualquier sitio, con esos scriptlets.
  *
- * ZOOM LUPA: en esta maquina el pinch del trackpad NO llega como gesto nativo
- * al compositor (probado en vivo: habilitar el zoom visual nativo no hizo nada)
- * y el CDP `Emulation.setPageScaleFactor` resulto NO-OP en desktop (probado
- * 2026-07-03). Asi que la lupa vive AQUI, sin dependencias: capturamos el
- * wheel+ctrl (unico camino por el que el pinch llega, comprobado) y escalamos
- * la pagina con `transform: scale()` anclado al puntero. Un transform no
- * relayouta: lupa pura, no zoom de pagina.
+ * ZOOM = LUPA (bloque de abajo). El zoom de TEK AMPLIA sin re-acomodar la
+ * pagina: el zoom de pagina de Chromium recalcula el diseno y eso no era lo que
+ * se buscaba ("si hago zoom a un texto es para verlo mejor, no para mover toda
+ * la pagina"). Vive aqui porque necesita el DOM; el main solo le manda el
+ * teclado (WV.zoomCmd). Clave para que vaya suave, y no como la version del
+ * 2026-07-04: una sola escritura por frame (rAF) y capa GPU durante el gesto.
  *
  * CLAVE: este preload corre en el MAIN WORLD (`contextIsolation:false` en la
  * WebContentsView), por eso puede sobrescribir `fetch`/`JSON.parse` de la propia
@@ -24,11 +23,6 @@ import { ipcRenderer } from 'electron'
  * No expone NADA a `window` (todo vive en este scope), asi la pagina no alcanza
  * `ipcRenderer` ni `require`.
  */
-
-// --- Zoom LUPA (pinch del trackpad / Ctrl+rueda) ------------------------------
-// Canal por el que el main pide quitar la lupa con Ctrl+0 (espejo de
-// WV.lupaReset en src/shared/ipc.ts; inline: preload autocontenido).
-const LUPA_RESET = 'wv:lupaReset'
 
 /**
  * "Permitir sitio" en el escudo = TEK NO TOCA esta pagina. Ni filtrado de red
@@ -269,46 +263,184 @@ const AD_SCRIPTS = 'wv:adScripts'
   }
 })()
 
-let lupaScale = 1
-let lupaX = 0
-let lupaY = 0
+// --- LUPA: el zoom de TEK AMPLIA, no re-acomoda ------------------------------
+// Canal espejo de WV.zoomCmd en src/shared/ipc.ts (inline: preload autocontenido).
+const ZOOM_CMD = 'wv:zoomCmd'
 
-/** Aplica (o quita) la lupa: transform en <html>, anclado donde empezo el gesto. */
-function applyLupa(): void {
-  const el = document.documentElement
-  if (!el) return
-  if (lupaScale <= 1.001) {
-    lupaScale = 1
-    el.style.transform = ''
-    el.style.transformOrigin = ''
-    return
+/** Limites de la lupa. 1 = sin lupa. */
+const LUPA_MIN = 1
+const LUPA_MAX = 5
+/**
+ * Sensibilidad: factor = exp(-px * esto). Son DOS numeros porque el pinch y la
+ * rueda no se parecen en nada: el trackpad manda un chorro de eventos de 2-4 px
+ * y una muesca de raton vale 100 de golpe. Con un solo valor, o el pellizco se
+ * queda corto (lo que pasaba) o cada muesca te dispara al tope.
+ *
+ * SON LAS PERILLAS. Con 0.008, un pellizco normal (unos 120 px sumados) llega a
+ * ~2.6x; con 0.002, una muesca de raton amplia un comodo 1.22x.
+ */
+const LUPA_PINCH_SPEED = 0.008
+const LUPA_WHEEL_SPEED = 0.002
+/** Por debajo de estos px el evento es pinch; por encima, muesca de raton. */
+const LUPA_NOTCH_PX = 50
+/** Cuanto amplia una pulsacion de Ctrl+ / Ctrl-. */
+const LUPA_KEY_STEP = 1.25
+/** Sin gesto durante esto, se suelta la capa GPU y el texto vuelve NITIDO (ms). */
+const LUPA_SHARP_MS = 120
+
+/** Escala aplicada, escala pedida, y el desplazamiento que el scroll no pudo dar. */
+let lupa = 1
+let lupaNext = 1
+let lupaTx = 0
+let lupaTy = 0
+/** Ancla del gesto en px de ventana (donde esta el puntero / el centro). */
+let lupaAx = 0
+let lupaAy = 0
+let lupaRaf = 0
+let lupaSharpTimer = 0
+/** overflow inline de <html> y <body> antes de la lupa (para devolverlo tal cual). */
+let lupaOverflow: [string, string][] | null = null
+
+/**
+ * Muchas paginas llevan `overflow-x: hidden`, y con la lupa puesta eso te dejaria
+ * sin poder moverte de lado. Se libera SOLO mientras dura la lupa. Via CSSOM y no
+ * inyectando un <style>: un <style> nuevo lo tumba la CSP de sitios estrictos
+ * (Google), y tocar `el.style` no lo bloquea ninguna CSP.
+ */
+function lupaFreeOverflow(on: boolean): void {
+  const els = [document.documentElement, document.body].filter(Boolean)
+  if (on) {
+    if (lupaOverflow || !els.length) return
+    lupaOverflow = els.map((el) => [
+      el.style.getPropertyValue('overflow'),
+      el.style.getPropertyPriority('overflow')
+    ])
+    els.forEach((el) => el.style.setProperty('overflow', 'visible', 'important'))
+  } else {
+    if (!lupaOverflow) return
+    els.forEach((el, i) => {
+      const [value, priority] = lupaOverflow?.[i] ?? ['', '']
+      if (value) el.style.setProperty('overflow', value, priority)
+      else el.style.removeProperty('overflow')
+    })
+    lupaOverflow = null
   }
-  el.style.transformOrigin = `${lupaX}px ${lupaY}px`
-  el.style.transform = `scale(${lupaScale})`
 }
 
+/**
+ * Mientras dura el gesto, `will-change` promueve la pagina a su propia capa y
+ * quien estira es la GPU (suave, pero borroso al agrandar). Al parar se suelta y
+ * Chromium la vuelve a dibujar a la escala final: nitida. Es como se siente el
+ * pinch de un movil, y es justo lo que la lupa vieja NO hacia — repintaba la
+ * pagina entera en el hilo principal por CADA evento, de ahi el lag.
+ */
+function lupaSharpenSoon(): void {
+  if (lupaSharpTimer) clearTimeout(lupaSharpTimer)
+  lupaSharpTimer = window.setTimeout(() => {
+    lupaSharpTimer = 0
+    if (lupa > 1 && document.body) document.body.style.willChange = ''
+  }, LUPA_SHARP_MS)
+}
+
+/** Deja la pagina como estaba (sin lupa). */
+function lupaRelease(): void {
+  const body = document.body
+  if (body) {
+    body.style.transform = ''
+    body.style.transformOrigin = ''
+    body.style.willChange = ''
+  }
+  lupaFreeOverflow(false)
+}
+
+/**
+ * Aplica la escala pendiente. UNA sola vez por frame (lo llama un rAF): varios
+ * eventos de rueda en el mismo frame se funden en un solo repintado.
+ *
+ * El anclaje va en dos tiempos: primero se intenta con el SCROLL (asi la pagina
+ * ampliada se recorre como cualquier pagina larga, tambien de lado), y lo que el
+ * scroll no pueda dar —sitios con su propio scroll interno, tipo Gmail— lo
+ * absorbe un translate. Resultado: lo que esta bajo el puntero se queda bajo el
+ * puntero en los dos casos.
+ */
+function lupaApply(): void {
+  lupaRaf = 0
+  const body = document.body
+  if (!body) return
+  const prev = lupa
+  const next = Math.max(LUPA_MIN, Math.min(LUPA_MAX, lupaNext))
+  if (next === prev) return
+  // Punto del documento (en tamano real) que hay AHORA bajo el ancla.
+  const dx = (window.scrollX + lupaTx + lupaAx) / prev
+  const dy = (window.scrollY + lupaTy + lupaAy) / prev
+  lupa = next
+  lupaNext = next
+  if (next === 1) {
+    lupaTx = 0
+    lupaTy = 0
+    lupaRelease()
+    window.scrollTo({ left: dx - lupaAx, top: dy - lupaAy, behavior: 'instant' })
+    return
+  }
+  body.style.willChange = 'transform'
+  body.style.transformOrigin = '0 0'
+  body.style.transform = `scale(${next})`
+  lupaFreeOverflow(true)
+  // El transform ya agrando el area scrollable: ahora el scroll puede llegar.
+  const wantX = dx * next - lupaAx
+  const wantY = dy * next - lupaAy
+  window.scrollTo({ left: Math.max(0, wantX), top: Math.max(0, wantY), behavior: 'instant' })
+  lupaTx = Math.max(0, wantX - window.scrollX)
+  lupaTy = Math.max(0, wantY - window.scrollY)
+  if (lupaTx || lupaTy) body.style.transform = `translate(${-lupaTx}px, ${-lupaTy}px) scale(${next})`
+}
+
+/** Pide ampliar/reducir por un factor, anclado donde diga lupaAx/lupaAy. */
+function lupaBy(factor: number): void {
+  lupaNext = Math.max(LUPA_MIN, Math.min(LUPA_MAX, lupaNext * factor))
+  if (!lupaRaf) lupaRaf = requestAnimationFrame(lupaApply)
+  lupaSharpenSoon()
+}
+
+/**
+ * El pinch del trackpad llega AQUI, como un `wheel` con `ctrlKey` (en Windows no
+ * hay otra via: ver los caminos muertos anotados en ViewManager). Y ojo, este
+ * listener no es opcional aunque no hiciera nada: Chromium solo sintetiza ese
+ * wheel si la pagina tiene un listener de wheel NO pasivo instalado — quitarlo
+ * fue lo que dejo la laptop sin zoom el 2026-07-24.
+ *
+ * En burbuja y respetando `defaultPrevented`: si la pagina ya uso el gesto para
+ * lo suyo (Maps, Figma) no le pisamos nada, igual que Chrome.
+ */
 window.addEventListener(
   'wheel',
   (e: WheelEvent) => {
-    if (!e.ctrlKey) return
+    if (!e.ctrlKey || e.defaultPrevented) return
     e.preventDefault()
-    // El ancla se fija al EMPEZAR a agrandar (con la lupa en 1): lo que esta
-    // bajo el puntero es lo que crece, y el resto del gesto gira alrededor.
-    if (lupaScale === 1 && e.deltaY < 0) {
-      lupaX = e.clientX + window.scrollX
-      lupaY = e.clientY + window.scrollY
-    }
-    // deltaY < 0 (separar dedos) agranda; > 0 reduce. Tope 1x..4x.
-    lupaScale = Math.max(1, Math.min(4, lupaScale * Math.exp(-e.deltaY * 0.002)))
-    applyLupa()
+    // A pixeles de verdad: deltaMode 1 = lineas, 2 = pantallas.
+    const px =
+      e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight || 800 : 1)
+    if (!px) return
+    lupaAx = e.clientX
+    lupaAy = e.clientY
+    // px < 0 (separar los dedos / rueda arriba) = agrandar.
+    const speed = Math.abs(px) >= LUPA_NOTCH_PX ? LUPA_WHEEL_SPEED : LUPA_PINCH_SPEED
+    lupaBy(Math.exp(-px * speed))
   },
-  { passive: false, capture: true }
+  { passive: false }
 )
 
-// Ctrl+0 (lo resuelve el main en before-input-event) tambien quita la lupa.
-ipcRenderer.on(LUPA_RESET, () => {
-  lupaScale = 1
-  applyLupa()
+// Ctrl + / - / 0 con la pagina enfocada: los resuelve el main y los manda aqui.
+// Sin puntero al que anclarse, la lupa crece desde el centro de la ventana.
+ipcRenderer.on(ZOOM_CMD, (_e, cmd: unknown) => {
+  lupaAx = window.innerWidth / 2
+  lupaAy = window.innerHeight / 2
+  if (cmd === 'in') lupaBy(LUPA_KEY_STEP)
+  else if (cmd === 'out') lupaBy(1 / LUPA_KEY_STEP)
+  else if (cmd === 'reset') {
+    lupaNext = 1
+    if (!lupaRaf) lupaRaf = requestAnimationFrame(lupaApply)
+  }
 })
 
 // --- Contrasenas: captura de submit + relleno bajo demanda -------------------

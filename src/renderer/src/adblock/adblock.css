@@ -129,3 +129,27 @@
 .shield-toggle.is-off {
   color: var(--text-lo);
 }
+
+/* Diagnostico al pie: de donde salen las listas y de que fecha son. */
+.shield-lists {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+  padding: 9px 8px 4px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-lo);
+}
+.shield-lists.is-warn {
+  color: #e0b877;
+}
+.shield-lists .dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.75;
+}

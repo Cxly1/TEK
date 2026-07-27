@@ -120,12 +120,17 @@ export class MiniPlayer {
     this.meta = meta
     this.mode = 'docked'
     this.minimized = false
+    // Mientras el video vive en el mini, NO lo estrangule Chromium: la vista deja
+    // de ser la pestana activa, y con el throttling por defecto el compositor
+    // congela/ennegrece el <video>. Se restaura al soltarla (release).
+    this.setThrottling(view, false)
     const [winW, winH] = this.win.getContentSize()
     this.dockX = winW - this.w - MARGIN
     this.dockY = winH - (BAR + this.h) - MARGIN
     this.ensureChrome()
     this.layout()
     this.raise()
+    this.pokeRepaint()
     this.emit()
   }
 
@@ -137,6 +142,9 @@ export class MiniPlayer {
   release(): WebContentsView | null {
     const view = this.view
     if (!view) return null
+    // Vuelve a ser una pestana normal: restaura el throttling por defecto (una
+    // pestana de fondo SI debe estrangularse, por bateria).
+    this.setThrottling(view, true)
     // Quitar la barra de su contenedor actual y cerrarla.
     if (this.chrome) {
       try {
@@ -294,6 +302,28 @@ export class MiniPlayer {
     } catch {
       /* alguna vista ya no existe */
     }
+  }
+
+  /** Activa/desactiva el throttling de fondo de una vista, sin reventar si ya murio. */
+  private setThrottling(view: WebContentsView, on: boolean): void {
+    const wc = view.webContents
+    if (!wc.isDestroyed()) wc.setBackgroundThrottling(on)
+  }
+
+  /**
+   * Empujon de repintado: al mover la vista entre contenedores (tomarla, soltarla
+   * a flotante o reacoplarla) Chromium puede perder el surface del compositor y
+   * dejar el <video> en NEGRO hasta el siguiente cambio. Un micro-resize de 1px
+   * y de vuelta en el siguiente tick obliga a recomponer. Barato e idempotente.
+   */
+  private pokeRepaint(): void {
+    const view = this.view
+    if (!view) return
+    const b = view.getBounds()
+    view.setBounds({ ...b, height: Math.max(0, b.height + 1) })
+    setTimeout(() => {
+      if (this.view === view) view.setBounds(b)
+    }, 0)
   }
 
   dispose(): void {
@@ -471,6 +501,7 @@ export class MiniPlayer {
     fw.contentView.addChildView(this.chrome)
     this.mode = 'floating'
     this.layout()
+    this.pokeRepaint()
     this.emit()
   }
 
@@ -491,6 +522,7 @@ export class MiniPlayer {
     this.destroyFloat()
     this.layout()
     this.raise()
+    this.pokeRepaint()
     this.emit()
   }
 

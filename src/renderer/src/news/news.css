@@ -1,0 +1,365 @@
+/* Novedades de cada version + reportar un fallo (comparten caja y cabecera). */
+
+.news-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(4, 4, 6, 0.62);
+  backdrop-filter: blur(6px);
+}
+.news-panel {
+  width: min(580px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #23272d;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.news-panel.is-narrow {
+  width: min(520px, 92vw);
+}
+
+.news-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.news-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-hi);
+  margin: 0;
+}
+.news-x {
+  background: none;
+  border: none;
+  color: var(--text-lo);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.news-x:hover {
+  color: var(--text-hi);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.news-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 20px 16px;
+}
+/* La de fabrica es ancha y clara de mas para una caja de este tamano. */
+.news-body::-webkit-scrollbar {
+  width: 8px;
+}
+.news-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.news-body::-webkit-scrollbar-thumb {
+  background: #24282e;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+.news-body::-webkit-scrollbar-thumb:hover {
+  background: #333941;
+  background-clip: padding-box;
+}
+
+/* Superficie de LEER (Novedades): sin reglas duras — el texto se desvanece al
+   entrar y salir del scroll, que separa igual y no dibuja nada. Reportar un
+   fallo SI las mantiene: es un formulario, con zonas y una accion en el pie. */
+.news-panel.is-reading .news-head {
+  border-bottom: none;
+}
+.news-panel.is-reading .news-foot {
+  border-top: none;
+}
+.news-panel.is-reading .news-body {
+  padding-top: 4px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 16px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 16px),
+    transparent 100%
+  );
+}
+
+/* --- Una version: nodo en el riel ------------------------------------------
+   Linea de tiempo. El riel es la unica estructura del panel: fuera la pildora
+   de la version, la raya que separaba y la vineta de cada frase — eran tres
+   adornos para la misma jerarquia. Lo que ordena es el peso del texto: la
+   version instalada a plena luz, las viejas un paso atras. */
+
+.news-ver {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  padding: 16px 0 20px;
+}
+.news-ver:last-child {
+  padding-bottom: 6px;
+}
+/* El riel nace bajo un nodo y muere en el siguiente: nunca cruza un punto (asi
+   no hay que tapar la linea con el fondo, que aqui es un degradado). */
+.news-ver:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 23px;
+  bottom: -1px;
+  width: 1px;
+  background: var(--line);
+}
+.news-node {
+  grid-row: 1 / span 3;
+  width: 9px;
+  height: 9px;
+  margin-top: 7px;
+  border: 1px solid #2b2f35;
+  border-radius: 999px;
+}
+/* El UNICO oro del panel, y solo si hay algo sin ver. Sigue siendo halo, nunca
+   relleno: anillo dorado y resplandor, centro vacio. */
+.news-ver.is-new .news-node {
+  border: 1.5px solid var(--gold);
+  box-shadow:
+    0 0 0 4px rgba(227, 179, 65, 0.09),
+    0 0 12px var(--gold-glow);
+}
+
+.news-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.news-num {
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  color: #7f858c;
+  font-variant-numeric: tabular-nums;
+}
+.news-ver.is-current .news-num {
+  color: #a7adb4;
+}
+.news-tag {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+}
+.news-date {
+  margin-left: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  color: #5c626b;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.news-ver-title {
+  margin: 3px 0 9px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #9ba0a6;
+}
+.news-ver.is-current .news-ver-title {
+  color: var(--text-hi);
+}
+.news-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.news-items li {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #7c8188;
+}
+/* Las versiones viejas quedan un paso atras, sin desaparecer. */
+.news-ver.is-current .news-items li {
+  color: var(--phosphor);
+}
+
+.news-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+}
+.news-hint {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-lo);
+}
+.news-report {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--text-lo);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.news-report:hover {
+  color: var(--text-hi);
+  border-color: #3a3f47;
+}
+
+/* --- Reportar un fallo ---------------------------------------------------- */
+
+.fb-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-lo);
+  margin: 14px 0 6px;
+}
+.fb-opt {
+  color: #5c626b;
+}
+.fb-text,
+.fb-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-hi);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.fb-text {
+  min-height: 128px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.fb-text:focus,
+.fb-input:focus {
+  border-color: #3a3f47;
+}
+.fb-count {
+  display: block;
+  text-align: right;
+  font-size: 10px;
+  color: #5c626b;
+  margin-top: 4px;
+}
+
+.fb-sends {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.fb-sends-title {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-lo);
+  margin-bottom: 2px;
+}
+.fb-chip {
+  font-size: 11px;
+  color: var(--text-lo);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.fb-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-lo);
+  cursor: pointer;
+  padding: 3px 0;
+}
+.fb-check input {
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+.fb-note {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-lo);
+  line-height: 1.4;
+}
+/* Accion principal: mismo lenguaje que el boton primario del tutorial. */
+.fb-send {
+  border: 1px solid rgba(244, 213, 138, 0.5);
+  background: rgba(227, 179, 65, 0.08);
+  border-radius: 9px;
+  color: var(--gold-bright);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+.fb-send:hover:not(:disabled) {
+  border-color: var(--gold-bright);
+  background: rgba(227, 179, 65, 0.16);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+/* Deshabilitado se VE (atenuado), nunca desaparece. */
+.fb-send:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.fb-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 24px 32px;
+  text-align: center;
+}
+.fb-done-mark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(217, 180, 91, 0.45);
+  color: var(--gold);
+  font-size: 18px;
+}
+.fb-done p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--phosphor);
+}

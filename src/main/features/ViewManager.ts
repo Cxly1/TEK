@@ -40,6 +40,13 @@ const PARTITION = 'persist:tek'
 /** Niveles de zoom de pagina (factor), estilo navegador. 1 = 100%. */
 const ZOOM_LEVELS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3]
 
+/**
+ * Freno del zoom por gesto (ms): solo lo sufre el respaldo `zoom-changed`, que
+ * no sabe cuanto pinchaste. Subelo si el pinch dentro de un iframe se pasa de
+ * rapido; el pinch normal no pasa por aqui (ver gestureZoom).
+ */
+const GESTURE_ZOOM_MS = 55
+
 /** Alto (px) de la barra "buscar en pagina"; la vista activa baja para dejarle sitio. */
 const FINDBAR_HEIGHT = 46
 
@@ -98,7 +105,7 @@ const YT_PIP_CSS = `
     margin: 0 !important; padding: 0 !important;
     z-index: 9999 !important;
   }
-  #movie_player, .html5-video-player { width: 100% !important; height: 100% !important; }
+  #movie_player, .html5-video-player, .html5-video-container { width: 100% !important; height: 100% !important; }
   video.video-stream.html5-main-video {
     width: 100% !important; height: 100% !important;
     top: 0 !important; left: 0 !important;
@@ -107,11 +114,42 @@ const YT_PIP_CSS = `
   html, body { overflow: hidden !important; margin: 0 !important; background: #000 !important; }
 `
 
-/** CSS de recorte "solo reproductor" para un host, o null si no aplica. */
-function pipSiteCss(host: string): string | null {
-  if (/(^|\.)youtube(-nocookie)?\.com$/.test(host)) return YT_PIP_CSS
-  return null
+/**
+ * CSS de recorte "solo reproductor" para una URL, o null si no aplica.
+ *
+ * OJO: solo en las paginas de YouTube que TIENEN un reproductor a pantalla
+ * (`/watch`, `/live/`, `/embed/`). En la home, resultados o un canal, los
+ * selectores del player no existen y el CSS solo dejaria el `background:#000`
+ * — es decir, negro. Ahi devolvemos null: se ve la pagina encogida (fea, pero
+ * nunca una pantalla negra). Los Shorts tienen otro layout (vertical) y se
+ * quedan sin recorte a proposito.
+ */
+function pipSiteCss(url: string): string | null {
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return null
+  }
+  if (!/(^|\.)youtube(-nocookie)?\.com$/.test(u.hostname)) return null
+  const isPlayerPage = u.pathname === '/watch' || /^\/(live|embed)\//.test(u.pathname)
+  return isPlayerPage ? YT_PIP_CSS : null
 }
+
+/**
+ * Empuja a YouTube a recalcular el tamano del <video> tras recortar: dispara
+ * 'resize' ya y luego espaciado, y PARA en cuanto el video llena el ancho del
+ * mini (o a los ~2.4s). Tope de intentos: nunca un bucle infinito.
+ */
+const YT_PIP_RELAYOUT = `(function () {
+  var n = 0;
+  (function tick() {
+    window.dispatchEvent(new Event('resize'));
+    var v = document.querySelector('video.html5-main-video');
+    var filled = v && v.getBoundingClientRect().width >= window.innerWidth * 0.5;
+    if (!filled && ++n < 16) setTimeout(tick, 150);
+  })();
+})();`
 
 /**
  * Gestiona las pestanas, cada una con su WebContentsView. Solo la activa es
@@ -140,6 +178,8 @@ export class ViewManager {
   /** Sesion guardada pendiente de decidir (reanudar o descartar). */
   private pending: SavedSession | null
   private persistTimer: NodeJS.Timeout | null = null
+  /** Cuando se aplico el ultimo paso de zoom POR GESTO (freno, ver gestureZoom). */
+  private lastGestureZoomAt = 0
   /** Cerebro de TEK: aprende de la navegacion. */
   readonly brain: Brain
   /** Adblock (3 capas). */
@@ -318,6 +358,36 @@ export class ViewManager {
   }
 
   /**
+   * Zoom de PAGINA por gesto, y solo en el respaldo: el zoom de TEK es la lupa
+   * del preload (amplia sin re-acomodar), pero en un iframe de otro origen el
+   * preload no corre y ahi el Ctrl+rueda llega como `zoom-changed`. Ese evento
+   * solo dice la direccion, no cuanto: un pinch dispara decenas y sin freno el
+   * zoom se iria al tope de un tiron (el bug clasico del pinch en Windows).
+   */
+  /**
+   * Devuelve la pagina a su tamano al cargar. NO es cosmetico: Chromium guarda
+   * el zoom POR DOMINIO y lo reaplica a cualquier pestana de ese sitio, incluso
+   * tras reiniciar. Con el zoom de pagina ya fuera (el zoom de TEK es la lupa,
+   * que muere con el documento), lo unico que puede moverlo es el respaldo de
+   * los iframes — y eso no debe quedarse pegado al dominio para siempre.
+   *
+   * Cura ademas los sitios que quedaron atrapados por el zoom nativo que se
+   * probo el 2026-07-24 (visto en vivo con WhatsApp): en cuanto recargan,
+   * vuelven solos.
+   */
+  private clearStuckZoom(wc: Electron.WebContents): void {
+    if (wc.isDestroyed()) return
+    if (wc.getZoomFactor() !== 1) wc.setZoomFactor(1)
+  }
+
+  private gestureZoom(wc: Electron.WebContents, dir: 'in' | 'out'): void {
+    const now = Date.now()
+    if (now - this.lastGestureZoomAt < GESTURE_ZOOM_MS) return
+    this.lastGestureZoomAt = now
+    this.stepZoom(wc, dir)
+  }
+
+  /**
    * Aplica la UA que toca para una URL: la limpia (sin tokens tek/Electron) en
    * los hosts quisquillosos tipo WhatsApp, la default en todo lo demas. Se llama
    * ANTES de cada carga para que tanto el header como navigator.userAgent ya
@@ -353,15 +423,18 @@ export class ViewManager {
     // sus window.open pasan por el mismo control que los de una pestana.
     wc.on('did-create-window', (child) => this.hardenPopup(child))
 
-    // Zoom visual nativo APAGADO (1..1): la LUPA la hace el preload con un
-    // transform CSS (el pinch no llega como gesto nativo en esta maquina y el
-    // CDP setPageScaleFactor probo ser no-op en desktop). Con esto no puede
-    // haber doble mecanismo.
+    // Zoom visual nativo APAGADO (1..1). NO tocar: probado en vivo DOS veces
+    // (2026-07-03 y 2026-07-24) que en Windows el pinch del trackpad no llega
+    // al compositor como gesto — abrirlo a (1,3) solo consigue que Chromium se
+    // trague el pinch por la via del "page scale", que en escritorio no pinta
+    // nada Y ademas ya no emite zoom-changed: el trackpad se queda SIN zoom.
+    // Con (1,1) el pinch sigue el camino bueno: rueda sintetica con ctrlKey,
+    // que lee la LUPA del preload (ver el bloque LUPA en webview.ts).
     wc.setVisualZoomLevelLimits(1, 1)
-    // Ctrl+rueda que NO capturo el preload (p. ej. dentro de un iframe, donde
-    // el preload no corre): Chromium lo reporta como zoom-changed sin aplicar
-    // nada. Lo resolvemos como zoom de pagina por pasos.
-    wc.on('zoom-changed', (_e, direction) => this.stepZoom(wc, direction))
+    // Respaldo para los marcos donde el preload NO corre (iframes de otro
+    // origen): ahi no hay lupa y el Ctrl+rueda llega como zoom-changed, que
+    // resolvemos como zoom de pagina por pasos (con freno, ver gestureZoom).
+    wc.on('zoom-changed', (_e, direction) => this.gestureZoom(wc, direction))
     // Atajos de teclado con la PAGINA enfocada: sus teclas no llegan al renderer,
     // asi que los resolvemos aqui (zoom, recargar, find, paleta, pestanas...).
     wc.on('before-input-event', (e, input) => {
@@ -403,8 +476,12 @@ export class ViewManager {
     })
     // El DOM ya existe: inyeccion de userscripts y aviso de credenciales.
     wc.on('dom-ready', () => {
+      this.clearStuckZoom(wc)
       if (!tab.blank) this.onDomReady?.(tab.id, wc)
     })
+    // Y otra vez al terminar: Chromium reaplica el zoom guardado del dominio
+    // DESPUES de cargar, asi que hacerlo solo en dom-ready no siempre gana.
+    wc.on('did-finish-load', () => this.clearStuckZoom(wc))
     wc.on('did-navigate-in-page', push)
     wc.on('page-title-updated', (_e, title) => {
       if (tab.visitId !== null) this.brain.updateTitle(tab.visitId, title)
@@ -678,11 +755,11 @@ export class ViewManager {
     const view = new WebContentsView({
       webPreferences: {
         partition: PARTITION,
-        // contextIsolation:false a proposito: el preload corre en el MAIN WORLD
-        // para (a) capturar el pinch/Ctrl+rueda del zoom y (b) podar los anuncios
-        // de video de YouTube en document-start (sobrescribir el fetch/JSON.parse
-        // de la propia pagina). Mantenemos sandbox + sin nodeIntegration, y el
-        // preload no expone nada a `window`, asi el riesgo queda acotado.
+        // contextIsolation:false a proposito: el preload corre en el MAIN WORLD,
+        // lo unico que hace posible podar los anuncios de video de YouTube en
+        // document-start (hay que sobrescribir el fetch/JSON.parse de la PROPIA
+        // pagina). Mantenemos sandbox + sin nodeIntegration, y el preload no
+        // expone nada a `window`, asi el riesgo queda acotado.
         contextIsolation: false,
         sandbox: true,
         nodeIntegration: false,
@@ -992,10 +1069,10 @@ export class ViewManager {
     return this.mini.getState()
   }
 
-  /** Inyecta el recorte "solo reproductor" si el sitio lo tiene (p. ej. YouTube). */
+  /** Inyecta el recorte "solo reproductor" si la URL lo tiene (p. ej. un /watch de YouTube). */
   private async applyPipSiteCss(tab: Tab): Promise<void> {
     const wc = this.liveWc(tab)
-    const css = pipSiteCss(tab.group)
+    const css = wc ? pipSiteCss(wc.getURL()) : null
     if (!wc || !css) return
     try {
       const key = await wc.insertCSS(css)
@@ -1003,13 +1080,11 @@ export class ViewManager {
       // YouTube calcula el tamano del <video> por JS al ULTIMO evento 'resize'.
       // Recortar a "solo player" con CSS no dispara resize, asi que el video se
       // queda al tamano que tenia la pagina entera encogida (diminuto/negro en la
-      // ventanita). Forzamos un par de resize para que el reproductor recalcule y
-      // LLENE el mini (el segundo, diferido, cubre la inicializacion asincrona).
+      // ventanita). Disparamos 'resize' repetido hasta que el <video> LLENE el
+      // mini (o se agoten los intentos), cubriendo la inicializacion asincrona del
+      // player sin quedar atados a un unico setTimeout que puede llegar tarde.
       await wc
-        .executeJavaScript(
-          "window.dispatchEvent(new Event('resize')); setTimeout(() => window.dispatchEvent(new Event('resize')), 300)",
-          true
-        )
+        .executeJavaScript(YT_PIP_RELAYOUT, true)
         .catch(() => undefined)
     } catch {
       /* la pagina no dejo inyectar CSS */
@@ -1136,17 +1211,19 @@ export class ViewManager {
     const { shift, alt, key } = input
     const low = key.toLowerCase()
 
-    // Zoom de pagina.
+    // Zoom = LUPA (amplia sin re-acomodar la pagina): la aplica el preload, aqui
+    // solo se le pide. Ctrl+0 ademas deshace el zoom de pagina por si lo movio el
+    // respaldo de un iframe.
     if (ctrl && (key === '=' || key === '+')) {
       e.preventDefault()
-      this.stepZoom(wc, 'in')
+      wc.send(WV.zoomCmd, 'in')
     } else if (ctrl && key === '-') {
       e.preventDefault()
-      this.stepZoom(wc, 'out')
+      wc.send(WV.zoomCmd, 'out')
     } else if (ctrl && key === '0') {
       e.preventDefault()
       wc.setZoomFactor(1)
-      wc.send(WV.lupaReset) // Ctrl+0 tambien quita la lupa (la aplica el preload)
+      wc.send(WV.zoomCmd, 'reset')
     }
     // Recargar (Ctrl+R / F5; con Shift ignora la cache).
     else if ((ctrl && low === 'r') || key === 'F5') {

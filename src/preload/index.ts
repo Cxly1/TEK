@@ -45,6 +45,10 @@ const api: TekApi = {
     get: () => ipcRenderer.invoke(IPC.profileGet),
     set: (patch) => ipcRenderer.invoke(IPC.profileSet, patch)
   },
+  version: () => ipcRenderer.invoke(IPC.appVersion),
+  feedback: {
+    send: (draft) => ipcRenderer.invoke(IPC.feedbackSend, draft)
+  },
   session: {
     peek: () => ipcRenderer.invoke(IPC.sessionPeek),
     restore: () => ipcRenderer.invoke(IPC.sessionRestore),

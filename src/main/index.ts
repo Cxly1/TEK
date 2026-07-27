@@ -34,6 +34,7 @@ import { Downloads } from './features/Downloads'
 import { Passwords } from './features/Passwords'
 import { Permissions } from './features/Permissions'
 import { Profile } from './features/Profile'
+import { Feedback } from './features/Feedback'
 import { Privacy } from './features/Privacy'
 import { Updater } from './features/Updater'
 import { Media } from './features/Media'
@@ -68,6 +69,7 @@ let passwords: Passwords | null = null
 let permissions: Permissions | null = null
 let privacy: Privacy | null = null
 let userProfile: Profile | null = null
+let feedback: Feedback | null = null
 let updater: Updater | null = null
 let media: Media | null = null
 
@@ -341,6 +343,7 @@ function registerIpc(): void {
     name: '',
     greeted: false,
     tourDone: false,
+    newsSeen: '',
     createdAt: Date.now()
   }
   ipcMain.handle(IPC.profileGet, (e) =>
@@ -349,6 +352,16 @@ function registerIpc(): void {
   ipcMain.handle(IPC.profileSet, (e, patch: Partial<UserProfile>) =>
     fromShell(e) ? userProfile?.set(patch) ?? DEFAULT_PROFILE : DEFAULT_PROFILE
   )
+
+  ipcMain.handle(IPC.appVersion, (e) => (fromShell(e) ? app.getVersion() : ''))
+  // Reportar un fallo: solo desde el shell, y el propio Feedback valida y acota
+  // lo que llega antes de mandarlo a ningun sitio.
+  ipcMain.handle(IPC.feedbackSend, async (e, draft: unknown) => {
+    if (!fromShell(e) || !feedback) {
+      return { ok: false, note: 'No se pudo enviar.', text: '' }
+    }
+    return feedback.send(draft)
+  })
 
   // --- Actualizacion de la app ---------------------------------------------
   // Nada se descarga sin un si explicito: `updateCheck` solo mira, y es
@@ -390,7 +403,10 @@ function registerIpc(): void {
   ipcMain.handle(IPC.winClose, () => mainWindow?.close())
 
   // Adblock
-  ipcMain.handle(IPC.adblockStatus, () => adblock?.status() ?? { enabled: false, ready: false })
+  ipcMain.handle(
+    IPC.adblockStatus,
+    () => adblock?.status() ?? { enabled: false, ready: false, source: 'baseline', updatedAt: null }
+  )
   ipcMain.handle(IPC.adblockToggle, (_e, on: boolean) => adblock?.setEnabled(on) ?? false)
   ipcMain.handle(IPC.adblockSiteAllowed, (_e, host: string) => adblock?.siteAllowed(host) ?? false)
   ipcMain.handle(IPC.adblockAllowSite, (_e, host: string, allowed: boolean) =>
@@ -662,6 +678,11 @@ app.whenReady().then(async () => {
   bridge = new AgentBridge()
   passwords = new Passwords()
   userProfile = new Profile()
+  // Estrenar TEK no cuenta como novedad: ver Profile.seedNews.
+  userProfile.seedNews(app.getVersion())
+  // Reportar un fallo. El sitio solo se lee si la persona marca la casilla, y
+  // aun asi sale del webContents, no de lo que diga el renderer.
+  feedback = new Feedback(() => views?.activeWc()?.getURL() ?? '')
 
   // Actualizacion: empuja su estado al shell y el shell decide que enseñar.
   // Solo hace algo en TEK instalado (en dev no hay app-update.yml).

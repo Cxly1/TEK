@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { hostKey } from '@shared/ipc'
+import { hostKey, type AdblockSource } from '@shared/ipc'
 import { useActiveTab } from '@/store'
 import './adblock.css'
+
+/** Texto humano de "de donde salen las listas y de que fecha son". */
+function listsLabel(source: AdblockSource, updatedAt: number | null): { text: string; warn: boolean } {
+  if (source === 'baseline') return { text: 'Protección básica — cargando listas…', warn: true }
+  if (!updatedAt) return { text: 'Listas activas', warn: false }
+  const days = Math.floor((Date.now() - updatedAt) / 86_400_000)
+  const when = days <= 0 ? 'hoy' : days === 1 ? 'ayer' : `hace ${days} días`
+  // 'snapshot' = las que vinieron con la app; 'cache'/'live' = refrescadas.
+  return { text: source === 'snapshot' ? `Listas incluidas · ${when}` : `Listas al día · ${when}`, warn: false }
+}
 
 /**
  * Escudo del adblock en la TopBar: muestra cuantos anuncios/trackers se han
@@ -19,13 +29,18 @@ export function AdblockShield(): React.JSX.Element {
 
   const [open, setOpen] = useState(false)
   const [enabled, setEnabled] = useState(true)
+  const [lists, setLists] = useState<{ source: AdblockSource; updatedAt: number | null } | null>(null)
   const [allowed, setAllowed] = useState(false)
 
   // Refresca el estado al abrir o al cambiar de sitio.
   useEffect(() => {
     if (!open) return
     let alive = true
-    void window.tek.adblock.status().then((s) => alive && setEnabled(s.enabled))
+    void window.tek.adblock.status().then((s) => {
+      if (!alive) return
+      setEnabled(s.enabled)
+      setLists({ source: s.source, updatedAt: s.updatedAt })
+    })
     if (host) void window.tek.adblock.siteAllowed(host).then((a) => alive && setAllowed(a))
     else setAllowed(false)
     return () => {
@@ -116,6 +131,17 @@ export function AdblockShield(): React.JSX.Element {
                   </span>
                 </button>
               )}
+
+              {lists &&
+                (() => {
+                  const { text, warn } = listsLabel(lists.source, lists.updatedAt)
+                  return (
+                    <div className={`shield-lists ${warn ? 'is-warn' : ''}`}>
+                      <span className="dot" />
+                      <span>{text}</span>
+                    </div>
+                  )
+                })()}
             </motion.div>
           </>
         )}

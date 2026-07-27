@@ -31,7 +31,8 @@ repetirlo cuando quieras desde **☰ → Repetir tutorial**.
   Atajos: `yt gatos`, `gh react`, `g recetas`.
 - Pestañas que **se agrupan solas por sitio**, con color propio, plegables y arrastrables.
 - Buscar en la página (`Ctrl+F`), reabrir la que cerraste (`Ctrl+Shift+T`), menús con clic derecho.
-- **Lupa**: `Ctrl` + rueda acerca la página sin descuadrar el diseño.
+- **Lupa**: `Ctrl` + rueda, pinch en el trackpad o `Ctrl` `+` / `-` — agranda de
+  verdad, sin re-acomodar la página; `Ctrl` `0` la quita.
 - Descargas con aviso nativo de Windows, historial buscable y borrable.
 - Toda la interfaz se recorre **solo con el teclado**.
 
@@ -78,8 +79,8 @@ repetirlo cuando quieras desde **☰ → Repetir tutorial**.
 | `Ctrl+1…9` | Saltar a una pestaña |
 | `Ctrl+F` | Buscar en la página |
 | `Ctrl+Shift+P` | Mini-player |
-| `Ctrl` + rueda | Lupa |
-| `Ctrl+0` | Quitar zoom y lupa |
+| `Ctrl` + rueda | Lupa (agrandar sin descuadrar) |
+| `Ctrl+0` | Quitar la lupa |
 | `F11` / `F12` | Pantalla completa / DevTools |
 
 ---

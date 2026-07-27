@@ -53,6 +53,9 @@ export function ToolsMenu(): React.JSX.Element {
     })
   }
 
+  // Novedades y Reportar un fallo NO viven aqui: tienen su propio boton en la
+  // barra (ver NewsButtons). Dentro del menu no se veian, que era justo el
+  // problema.
   const items: { id: string; icon: string; label: string; sub: string; run: () => void; badge?: number }[] = [
     { id: 'history', icon: '↺', label: 'Historial', sub: 'lo que has visitado', run: openHistory },
     { id: 'downloads', icon: '↧', label: 'Descargas', sub: 'tus archivos', run: openDownloads, badge: dlBadge },

@@ -10,6 +10,16 @@ files:
   - out/**
   - package.json
 
+# Snapshot de adblock (listas + scriptlets del dia del build). Va como recurso
+# suelto en resources/adblock, NO dentro del asar: Adblock.ts lo lee desde
+# process.resourcesPath. Es lo que da proteccion completa en una instalacion
+# fresca sin red. Lo genera `pnpm snapshot:adblock` (parte de `pnpm dist`).
+extraResources:
+  - from: assets/adblock
+    to: adblock
+    filter:
+      - '**/*'
+
 # better-sqlite3 lleva un binario nativo (.node): dentro del asar no se puede
 # cargar, asi que se empaqueta desempaquetado al lado.
 asarUnpack:

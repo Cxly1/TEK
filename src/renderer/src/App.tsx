@@ -14,6 +14,8 @@ import { HistoryPanel } from './history/HistoryPanel'
 import { AutomationPanel } from './automation/AutomationPanel'
 import { AutoToast } from './automation/AutoToast'
 import { PasswordsPanel } from './passwords/PasswordsPanel'
+import { NewsPanel } from './news/NewsPanel'
+import { FeedbackPanel } from './news/FeedbackPanel'
 import { PasswordToasts } from './passwords/PasswordToasts'
 import { UpdateToast } from './update/UpdateToast'
 import { ToolsMenu } from './shell/ToolsMenu'
@@ -35,6 +37,9 @@ export function App(): React.JSX.Element {
   const tourOpen = useTek((s) => s.tourOpen)
   const welcomeOpen = useTek((s) => s.welcomeOpen)
   const setProfile = useTek((s) => s.setProfile)
+  const setVersion = useTek((s) => s.setVersion)
+  const newsOpen = useTek((s) => s.newsOpen)
+  const feedbackOpen = useTek((s) => s.feedbackOpen)
   const openTour = useTek((s) => s.openTour)
   const recipeToast = useTek((s) => s.recipeToast)
   const setDownloads = useTek((s) => s.setDownloads)
@@ -52,10 +57,12 @@ export function App(): React.JSX.Element {
   useEffect(() => window.tek.onTabsState(setTabs), [setTabs])
 
   // Perfil de quien usa TEK: el nombre del saludo y si ya vio el tutorial. Llega
-  // antes de pintar Genesis, para que el saludo salga ya con el nombre.
+  // antes de pintar Genesis, para que el saludo salga ya con el nombre. La
+  // version viene con el: juntas deciden si hay novedades sin ver.
   useEffect(() => {
     void window.tek.profile.get().then(setProfile)
-  }, [setProfile])
+    void window.tek.version().then(setVersion)
+  }, [setProfile, setVersion])
 
   // Estado de descargas desde el main (alimenta el toast y el panel).
   useEffect(() => {
@@ -127,6 +134,8 @@ export function App(): React.JSX.Element {
         st.historyOpen ||
         st.automationOpen ||
         st.passwordsOpen ||
+        st.newsOpen ||
+        st.feedbackOpen ||
         st.toolsMenuOpen ||
         st.tourOpen ||
         st.welcomeOpen
@@ -138,6 +147,8 @@ export function App(): React.JSX.Element {
           else if (st.historyOpen) st.closeHistory()
           else if (st.automationOpen) st.closeAutomation()
           else if (st.passwordsOpen) st.closePasswords()
+          else if (st.feedbackOpen) st.closeFeedback()
+          else if (st.newsOpen) st.closeNews()
         }
         return
       }
@@ -274,6 +285,8 @@ export function App(): React.JSX.Element {
       <AnimatePresence>{historyOpen && <HistoryPanel key="history" />}</AnimatePresence>
       <AnimatePresence>{automationOpen && <AutomationPanel key="automation" />}</AnimatePresence>
       <AnimatePresence>{passwordsOpen && <PasswordsPanel key="passwords" />}</AnimatePresence>
+      <AnimatePresence>{newsOpen && <NewsPanel key="news" />}</AnimatePresence>
+      <AnimatePresence>{feedbackOpen && <FeedbackPanel key="feedback" />}</AnimatePresence>
       <AnimatePresence>{toolsMenuOpen && <ToolsMenu key="toolsmenu" />}</AnimatePresence>
       <AnimatePresence>
         {routine !== null && phase === 'shell' && <RoutineToast key="routine" />}

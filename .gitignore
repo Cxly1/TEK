@@ -6,6 +6,11 @@ release
 *.log
 *.tsbuildinfo
 
+# Snapshot de adblock: lo genera `pnpm snapshot:adblock` en cada `pnpm dist`
+# (listas + scriptlets frescos del dia del build). No se versiona: pesa varios MB
+# y cambia a diario. Sin el, la app cae al baseline/cache — sigue arrancando.
+assets/adblock/
+
 # Herramientas locales y material de trabajo (no forman parte del navegador)
 .claude/
 __ztest__/

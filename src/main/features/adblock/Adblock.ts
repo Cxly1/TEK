@@ -1,12 +1,13 @@
 import { app, net, session as electronSession } from 'electron'
 import { join } from 'node:path'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, stat } from 'node:fs/promises'
 import {
   ElectronBlocker,
   fetchResources,
   type Fetch,
   type Request as AdRequest
 } from '@ghostery/adblocker-electron'
+import type { AdblockSource } from '@shared/ipc'
 // El mismo parser de dominios que usa el motor por dentro: el eTLD+1 que le
 // pasemos a getCosmeticsFilters tiene que salir igual que el suyo.
 import { parse as parseDomain } from 'tldts-experimental'
@@ -149,34 +150,100 @@ export class Adblock {
   private readonly dir = join(app.getPath('userData'), 'adblock')
   private readonly enginePath = join(this.dir, 'engine.bin')
   private readonly settingsPath = join(this.dir, 'settings.json')
+  /**
+   * Snapshot de listas EMPAQUETADO con la app (listas + scriptlets del dia del
+   * build). En produccion vive en resources/adblock; en dev, en assets/adblock.
+   * Es lo que da proteccion COMPLETA en una instalacion fresca sin red — antes
+   * solo estaba el baseline de ~30 dominios y a quien no le cargaban las listas
+   * (red que bloquea GitHub, primer arranque sin internet) le pasaban anuncios.
+   */
+  private readonly assetDir = app.isPackaged
+    ? join(process.resourcesPath, 'adblock')
+    : join(app.getAppPath(), 'assets', 'adblock')
   private refreshTimer: NodeJS.Timeout | null = null
+
+  /** Diagnostico: de donde salio el motor activo y de que fecha son sus listas. */
+  private source: AdblockSource = 'baseline'
+  private updatedAt: number | null = null
+  /** Anti-solape + backoff del refresco (un fallo transitorio no espera 12h). */
+  private refreshing = false
+  private refreshRetries = 0
+  /** resources.json empaquetado (scriptlets), leido bajo demanda una vez. */
+  private packedResources: string | null = null
+  private packedResourcesTried = false
 
   constructor(partition: string) {
     this.session = electronSession.fromPartition(partition)
   }
 
-  /** Arranque: settings + motor (cache→baseline) y refresco en segundo plano. */
+  /** Arranque: settings + motor (cache→snapshot→baseline) y refresco en segundo plano. */
   async init(): Promise<void> {
     await mkdir(this.dir, { recursive: true }).catch(() => undefined)
     await this.loadSettings()
 
-    // 1) Motor desde cache (instantaneo, offline).
-    try {
-      const buf = await readFile(this.enginePath)
-      this.setBlocker(ElectronBlocker.deserialize(new Uint8Array(buf)))
-    } catch {
-      // 2) Baseline embebido: nunca arrancar totalmente sin proteccion.
-      try {
-        this.setBlocker(ElectronBlocker.parse(BASELINE, { enableCompression: true }))
-      } catch (e) {
-        console.error('[TEK Adblock] no se pudo crear el motor baseline:', e)
+    // 1) Cache de un refresco previo (lo mas fresco, instantaneo, offline).
+    if (!(await this.loadEngine(this.enginePath, 'cache'))) {
+      // 2) Snapshot empaquetado: listas + scriptlets del dia del build. Cubre la
+      // instalacion fresca aunque no haya red o la red bloquee las listas.
+      if (!(await this.loadSnapshot())) {
+        // 3) Baseline embebido: nunca arrancar del todo sin proteccion.
+        try {
+          this.setBlocker(ElectronBlocker.parse(BASELINE, { enableCompression: true }))
+          this.source = 'baseline'
+          this.updatedAt = null
+        } catch (e) {
+          console.error('[TEK Adblock] no se pudo crear el motor baseline:', e)
+        }
       }
     }
 
-    // 3) En segundo plano: listas completas frescas via net.fetch, ahora y
+    // 4) En segundo plano: listas completas frescas via net.fetch, ahora y
     // luego cada 12h (ver REFRESH_MS).
     void this.refresh()
     this.refreshTimer = setInterval(() => void this.refresh(), REFRESH_MS)
+  }
+
+  /** Carga el motor desde un .bin serializado; true si funciono. Fija origen/fecha. */
+  private async loadEngine(path: string, source: AdblockSource): Promise<boolean> {
+    try {
+      const buf = await readFile(path)
+      this.setBlocker(ElectronBlocker.deserialize(new Uint8Array(buf)))
+      this.source = source
+      this.updatedAt = await stat(path)
+        .then((s) => s.mtimeMs)
+        .catch(() => null)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Motor desde el snapshot empaquetado: listas (lists.txt) + scriptlets (resources.json). */
+  private async loadSnapshot(): Promise<boolean> {
+    try {
+      const text = await readFile(join(this.assetDir, 'lists.txt'), 'utf8')
+      const engine = ElectronBlocker.parse(text, { enableCompression: true })
+      const resources = await this.packagedResources()
+      if (resources) engine.updateResources(resources, RESOURCES_CHECKSUM)
+      this.setBlocker(engine)
+      this.source = 'snapshot'
+      this.updatedAt = await stat(join(this.assetDir, 'lists.txt'))
+        .then((s) => s.mtimeMs)
+        .catch(() => null)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Lee (una sola vez) el resources.json empaquetado — fallback de scriptlets. */
+  private async packagedResources(): Promise<string | null> {
+    if (this.packedResourcesTried) return this.packedResources
+    this.packedResourcesTried = true
+    this.packedResources = await readFile(join(this.assetDir, 'resources.json'), 'utf8').catch(
+      () => null
+    )
+    return this.packedResources
   }
 
   /** Reemplaza el motor activo: re-cablea conteo, allowlist y bloqueo. */
@@ -229,18 +296,42 @@ export class Adblock {
 
   /** Descarga listas completas + scriptlets, cachea y reemplaza el motor. */
   private async refresh(): Promise<void> {
+    if (this.refreshing) return
+    this.refreshing = true
     try {
-      const fresh = await ElectronBlocker.fromLists(cFetch, LISTS, { enableCompression: true })
+      // Descarga TOLERANTE: cada lista por su cuenta (allSettled). `fromLists`
+      // usa Promise.all — todo-o-nada: una sola URL caida tumbaba el refresco
+      // entero. Asi, si 8 de 9 llegan, refrescamos con esas 8.
+      const settled = await Promise.allSettled(LISTS.map((u) => cFetch(u).then((r) => r.text())))
+      const texts = settled
+        .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
+        .map((r) => r.value)
+      if (texts.length === 0) throw new Error('ninguna lista disponible')
+      const fresh = ElectronBlocker.parse(texts.join('\n'), { enableCompression: true })
+      // Scriptlets: frescos si se pueden bajar; si no (raw.githubusercontent
+      // bloqueado en la red), los del snapshot empaquetado — nunca quedarse SIN
+      // scriptlets, que son justo lo que desarma el muro de YouTube.
+      let resources: string | null = null
       try {
-        const resources = await fetchResources(cFetch)
-        fresh.updateResources(resources, RESOURCES_CHECKSUM)
+        resources = await fetchResources(cFetch)
       } catch {
-        /* sin scriptlets: el bloqueo de red sigue funcionando */
+        resources = await this.packagedResources()
       }
+      if (resources) fresh.updateResources(resources, RESOURCES_CHECKSUM)
       await writeFile(this.enginePath, Buffer.from(fresh.serialize())).catch(() => undefined)
       this.setBlocker(fresh)
+      this.source = 'live'
+      this.updatedAt = Date.now()
+      this.refreshRetries = 0
     } catch (e) {
       console.error('[TEK Adblock] refresco de listas fallido (sigo con lo que tengo):', e)
+      // Backoff 1,2,4,8,16 min (tope 30): reintenta pronto, no a las 12h. El
+      // interval de 12h sigue para la frescura normal cuando todo va bien.
+      const delayMin = Math.min(30, 2 ** this.refreshRetries)
+      this.refreshRetries = Math.min(this.refreshRetries + 1, 5)
+      setTimeout(() => void this.refresh(), delayMin * 60_000)
+    } finally {
+      this.refreshing = false
     }
   }
 
@@ -333,8 +424,13 @@ export class Adblock {
     }
   }
 
-  status(): { enabled: boolean; ready: boolean } {
-    return { enabled: this.enabled, ready: this.blocker !== null }
+  status(): { enabled: boolean; ready: boolean; source: AdblockSource; updatedAt: number | null } {
+    return {
+      enabled: this.enabled,
+      ready: this.blocker !== null,
+      source: this.source,
+      updatedAt: this.updatedAt
+    }
   }
 
   // --- Contador --------------------------------------------------------------

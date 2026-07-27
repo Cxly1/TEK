@@ -70,6 +70,14 @@
   white-space: nowrap;
 }
 
+/* Aviso sin numero (novedades sin ver): un punto, no un contador. */
+.tm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold-glow);
+}
 .tm-badge {
   min-width: 16px;
   height: 16px;

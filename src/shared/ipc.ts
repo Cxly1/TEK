@@ -39,6 +39,10 @@ export const IPC = {
   // Perfil de quien usa TEK (nombre para el saludo + tutorial visto)
   profileGet: 'profile:get',
   profileSet: 'profile:set',
+  /** Version de TEK que se esta ejecutando (para las novedades). */
+  appVersion: 'app:version',
+  /** Manda un reporte de fallo a quien mantiene TEK. */
+  feedbackSend: 'feedback:send',
 
   // Sesion guardada (reanudar al arrancar)
   sessionPeek: 'session:peek',
@@ -190,8 +194,12 @@ export const IPC = {
  * siendo autocontenido; estos espejos son para el lado main).
  */
 export const WV = {
-  /** El main pide al preload quitar la lupa (Ctrl+0). */
-  lupaReset: 'wv:lupaReset',
+  /**
+   * El main manda a la LUPA lo que pidio el teclado: 'in' | 'out' | 'reset'
+   * (Ctrl + / - / 0). El gesto —pinch y Ctrl+rueda— no pasa por aqui: lo lee y
+   * lo aplica el propio preload, que es donde vive la lupa.
+   */
+  zoomCmd: 'wv:zoomCmd',
   /** El preload capturo un envio de credenciales (submit de login). */
   pwCaptured: 'wv:pwCaptured',
   /** El main manda credenciales a rellenar (solo tras clic del usuario). */
@@ -254,12 +262,23 @@ export interface TabMeta {
   pip?: boolean
 }
 
+/** De donde salio el motor de adblock activo (para diagnostico). */
+export type AdblockSource = 'cache' | 'snapshot' | 'baseline' | 'live'
+
 /** Estado del adblock para la pestana activa. */
 export interface AdblockStatus {
   /** Bloqueo global activado. */
   enabled: boolean
-  /** El motor ya cargo (cache/baseline/listas). */
+  /** El motor ya cargo (cache/snapshot/baseline/listas). */
   ready: boolean
+  /**
+   * Origen del motor: `cache` (refresco previo guardado), `snapshot` (listas
+   * empaquetadas con la app), `baseline` (los ~30 dominios embebidos, proteccion
+   * minima) o `live` (listas frescas de esta sesion). `baseline` = algo va mal.
+   */
+  source: AdblockSource
+  /** Fecha (ms) de las listas activas, o null si es el baseline embebido. */
+  updatedAt: number | null
 }
 
 /** Resumen de la sesion guardada que se ofrece reanudar al arrancar. */
@@ -281,8 +300,35 @@ export interface UserProfile {
   greeted: boolean
   /** Ya vio el tutorial guiado (se puede repetir desde el menu ☰). */
   tourDone: boolean
+  /**
+   * Ultima version cuyas novedades ya vio ('' = ninguna). En una instalacion
+   * nueva se marca con la version actual al arrancar: estrenar TEK no es
+   * "novedad", asi que nadie ve un aviso el primer dia.
+   */
+  newsSeen: string
   /** Primer arranque (ms epoch). */
   createdAt: number
+}
+
+// --- Reportar un fallo -----------------------------------------------------
+
+/** Lo que la persona escribe en el panel de "Reportar un fallo". */
+export interface FeedbackDraft {
+  /** Que le paso. Es lo unico obligatorio. */
+  message: string
+  /** Como responderle, si quiere dejarlo. Puede ir vacio. */
+  contact: string
+  /** Adjuntar el sitio donde estaba. Solo si lo marca (por defecto NO). */
+  includeSite: boolean
+}
+
+/** Resultado del envio, ya en lenguaje de persona. */
+export interface FeedbackResult {
+  ok: boolean
+  /** Que decirle: el error explicado, o el acuse de recibo. */
+  note: string
+  /** El reporte tal cual se iba a enviar, para poder copiarlo si fallo. */
+  text: string
 }
 
 // --- Cerebro de TEK --------------------------------------------------------
@@ -728,6 +774,13 @@ export interface TekApi {
     get(): Promise<UserProfile>
     /** Guarda un cambio parcial y devuelve el perfil resultante. */
     set(patch: Partial<UserProfile>): Promise<UserProfile>
+  }
+  /** Version de TEK en marcha (la de package.json). */
+  version(): Promise<string>
+  /** Reportar un fallo a quien mantiene TEK. */
+  feedback: {
+    /** Manda el reporte. Nunca lanza: el fallo viene contado en el resultado. */
+    send(draft: FeedbackDraft): Promise<FeedbackResult>
   }
   session: {
     /** Cuantas pestanas hay guardadas (o null si no hay sesion previa). */

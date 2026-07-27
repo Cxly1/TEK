@@ -3,6 +3,7 @@ import { useTek, useActiveTab } from '@/store'
 import { hostKey, prettyHost, type TabMeta } from '@shared/ipc'
 import { groupColor } from '@/lib/groupColor'
 import { AdblockShield } from '@/adblock/AdblockShield'
+import { NewsButton, ReportButton } from '@/news/NewsButtons'
 import { NowPlaying } from './NowPlaying'
 import '../automation/automation.css'
 
@@ -318,6 +319,8 @@ export function TopBar(): React.JSX.Element {
           </button>
         )}
 
+        <NewsButton />
+        <ReportButton />
         <ToolsButton />
 
         <div className="tb-win no-drag">

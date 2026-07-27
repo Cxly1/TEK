@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type {
   DevServer,
   DownloadEntry,
+  FeedbackDraft,
   FillAvailable,
   FindResult,
   MediaState,
@@ -41,10 +42,20 @@ interface TekState {
   automationOpen: boolean
   /** Panel de contrasenas abierto. */
   passwordsOpen: boolean
+  /** Panel de novedades (que cambio en esta version) abierto. */
+  newsOpen: boolean
+  /** Panel de "reportar un fallo" abierto. */
+  feedbackOpen: boolean
   /** Menu unico de herramientas (☰ de la barra) desplegado. */
   toolsMenuOpen: boolean
   /** Perfil de quien usa TEK. null = todavia no llego del main. */
   profile: UserProfile | null
+  /** Version de TEK en marcha ('' hasta que llega del main). Decide las novedades. */
+  version: string
+  setVersion: (v: string) => void
+  /** Reporte a medio escribir. Vive aqui para que cerrar el panel no lo borre. */
+  feedbackDraft: FeedbackDraft
+  setFeedbackDraft: (patch: Partial<FeedbackDraft>) => void
   /** Tutorial guiado (spotlight) en pantalla. */
   tourOpen: boolean
   /** Pantalla que pregunta tu nombre (primer arranque o "cambiar mi nombre"). */
@@ -92,6 +103,10 @@ interface TekState {
   closeAutomation: () => void
   openPasswords: () => void
   closePasswords: () => void
+  openNews: () => void
+  closeNews: () => void
+  openFeedback: () => void
+  closeFeedback: () => void
   openToolsMenu: () => void
   closeToolsMenu: () => void
   setProfile: (p: UserProfile) => void
@@ -117,7 +132,7 @@ interface TekState {
   setTabs: (state: TabsState) => void
 }
 
-export const useTek = create<TekState>((set) => ({
+export const useTek = create<TekState>((set, get) => ({
   phase: 'genesis',
   paletteOpen: false,
   seed: '',
@@ -129,8 +144,14 @@ export const useTek = create<TekState>((set) => ({
   historyOpen: false,
   automationOpen: false,
   passwordsOpen: false,
+  newsOpen: false,
+  feedbackOpen: false,
   toolsMenuOpen: false,
   profile: null,
+  version: '',
+  setVersion: (v) => set({ version: v }),
+  feedbackDraft: { message: '', contact: '', includeSite: false },
+  setFeedbackDraft: (patch) => set({ feedbackDraft: { ...get().feedbackDraft, ...patch } }),
   tourOpen: false,
   welcomeOpen: false,
   findOpen: false,
@@ -194,6 +215,28 @@ export const useTek = create<TekState>((set) => ({
   closePasswords: () => {
     void window.tek.setVisible(true)
     set({ passwordsOpen: false })
+  },
+  openNews: () => {
+    void window.tek.setVisible(false)
+    // Abrirlas ES haberlas visto: se apaga el punto del ☰ para siempre en esta
+    // version. Se guarda en el perfil, no solo en memoria.
+    const version = get().version
+    if (version && get().profile?.newsSeen !== version) {
+      void window.tek.profile.set({ newsSeen: version }).then(get().setProfile)
+    }
+    set({ newsOpen: true, feedbackOpen: false, brainOpen: false, downloadsOpen: false, historyOpen: false, automationOpen: false, passwordsOpen: false, toolsMenuOpen: false })
+  },
+  closeNews: () => {
+    void window.tek.setVisible(true)
+    set({ newsOpen: false })
+  },
+  openFeedback: () => {
+    void window.tek.setVisible(false)
+    set({ feedbackOpen: true, newsOpen: false, brainOpen: false, downloadsOpen: false, historyOpen: false, automationOpen: false, passwordsOpen: false, toolsMenuOpen: false })
+  },
+  closeFeedback: () => {
+    void window.tek.setVisible(true)
+    set({ feedbackOpen: false })
   },
   openToolsMenu: () => {
     // Como los paneles: ocultamos la vista para que el desplegable no quede

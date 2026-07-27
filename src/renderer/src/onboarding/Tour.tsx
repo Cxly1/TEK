@@ -83,6 +83,12 @@ function buildSteps(name: string): Step[] {
       body: 'Un único menú: historial, descargas, contraseñas (cifradas por tu propio Windows), automatización y el perfil de lo que TEK ha aprendido. Desde aquí también puedes repetir este tutorial.'
     },
     {
+      id: 'news',
+      target: 'news',
+      title: 'Cuando TEK cambie, te enteras',
+      body: 'TEK se actualiza sola, nunca sin avisar. Cuando llega una versión nueva, este megáfono se enciende con un punto dorado y dentro te cuento en dos líneas qué cambió; se apaga en cuanto lo abres. El bicho de al lado es para lo contrario: si algo se rompe, escríbeme desde ahí y me llega a mí.'
+    },
+    {
       id: 'page',
       target: 'address',
       title: 'Cuando abras una web',
@@ -91,7 +97,7 @@ function buildSteps(name: string): Step[] {
         { k: '🛡', v: 'anuncios bloqueados — clic para permitirlos en ese sitio' },
         { k: '▭', v: 'mini-player: el vídeo te sigue mientras navegas' },
         { k: 'Ctrl+F', v: 'buscar dentro de la página' },
-        { k: 'Ctrl + rueda', v: 'lupa: acerca sin descuadrar la web' }
+        { k: 'Ctrl + rueda', v: 'lupa: agranda sin descuadrar la web' }
       ]
     },
     {

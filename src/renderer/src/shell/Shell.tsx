@@ -107,6 +107,8 @@ export function Shell(): React.JSX.Element {
       s.historyOpen ||
       s.automationOpen ||
       s.passwordsOpen ||
+      s.newsOpen ||
+      s.feedbackOpen ||
       s.tourOpen
   )
 

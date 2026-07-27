@@ -12,11 +12,25 @@ export class Profile {
     name: '',
     greeted: false,
     tourDone: false,
+    newsSeen: '',
     createdAt: Date.now()
   })
 
   get(): UserProfile {
     return { ...this.store.data }
+  }
+
+  /**
+   * Estrenar TEK no es "novedad": en una instalacion nueva se da por vistas las
+   * novedades de la version actual, asi nadie ve el aviso el primer dia. A quien
+   * ya la tenia (perfil viejo, sin este campo) NO se le toca: al actualizar vera
+   * lo que cambio, que es justo la gracia. Se llama una vez al arrancar.
+   */
+  seedNews(version: string): void {
+    const d = this.store.data
+    if (d.newsSeen || d.greeted) return
+    d.newsSeen = version
+    this.store.save()
   }
 
   /** Aplica un cambio parcial y devuelve el perfil resultante. */
@@ -29,6 +43,9 @@ export class Profile {
     }
     if (typeof patch.greeted === 'boolean') d.greeted = patch.greeted
     if (typeof patch.tourDone === 'boolean') d.tourDone = patch.tourDone
+    // Version, no texto libre: se pinta en ningun sitio pero decide si sale el
+    // aviso, asi que se acota igual que el nombre.
+    if (typeof patch.newsSeen === 'string') d.newsSeen = patch.newsSeen.trim().slice(0, 24)
     this.store.save()
     return this.get()
   }
