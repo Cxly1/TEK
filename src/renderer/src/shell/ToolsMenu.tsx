@@ -18,6 +18,8 @@ export function ToolsMenu(): React.JSX.Element {
   const openAutomation = useTek((s) => s.openAutomation)
   const openBrain = useTek((s) => s.openBrain)
   const openTour = useTek((s) => s.openTour)
+  const openNews = useTek((s) => s.openNews)
+  const pending = useTek((s) => s.update.pending)
   const setUpdateNote = useTek((s) => s.setUpdateNote)
   const exclusive = useTek((s) => s.media.exclusive)
   const setMedia = useTek((s) => s.setMedia)
@@ -71,13 +73,24 @@ export function ToolsMenu(): React.JSX.Element {
       run: () => void window.tek.media.setExclusive(!exclusive).then(setMedia)
     },
     { id: 'tour', icon: '◎', label: 'Repetir tutorial', sub: 'el paseo guiado · y tu nombre', run: openTour },
-    {
-      id: 'update',
-      icon: '⟲',
-      label: 'Buscar actualizaciones',
-      sub: 'nada se descarga sin permiso',
-      run: checkUpdates
-    }
+    // Con una version esperando, la entrada deja de ser una pregunta y pasa a
+    // ser la respuesta: la marca vive en el megafono, pero quien abra el menu
+    // tampoco tiene que adivinarlo.
+    pending
+      ? {
+          id: 'update',
+          icon: '⟲',
+          label: `Actualizar a TEK ${pending}`,
+          sub: 'ya publicada · la tienes en Novedades',
+          run: openNews
+        }
+      : {
+          id: 'update',
+          icon: '⟲',
+          label: 'Buscar actualizaciones',
+          sub: 'nada se descarga sin permiso',
+          run: checkUpdates
+        }
   ]
 
   return (

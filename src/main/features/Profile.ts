@@ -13,6 +13,7 @@ export class Profile {
     greeted: false,
     tourDone: false,
     newsSeen: '',
+    updateSeen: '',
     createdAt: Date.now()
   })
 
@@ -46,6 +47,7 @@ export class Profile {
     // Version, no texto libre: se pinta en ningun sitio pero decide si sale el
     // aviso, asi que se acota igual que el nombre.
     if (typeof patch.newsSeen === 'string') d.newsSeen = patch.newsSeen.trim().slice(0, 24)
+    if (typeof patch.updateSeen === 'string') d.updateSeen = patch.updateSeen.trim().slice(0, 24)
     this.store.save()
     return this.get()
   }

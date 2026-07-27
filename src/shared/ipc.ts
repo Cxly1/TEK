@@ -306,6 +306,13 @@ export interface UserProfile {
    * "novedad", asi que nadie ve un aviso el primer dia.
    */
   newsSeen: string
+  /**
+   * Version pendiente de instalar que ya viste anunciada en Novedades ('' =
+   * ninguna). Solo decide si el punto del megafono LATE o se queda quieto: el
+   * punto no se apaga hasta que actualices de verdad, pero dejar de latir
+   * despues de haberlo visto evita que de la lata durante dias.
+   */
+  updateSeen: string
   /** Primer arranque (ms epoch). */
   createdAt: number
 }
@@ -693,6 +700,17 @@ export interface UpdateState {
   percent: number
   /** Motivo legible cuando `phase === 'error'`. */
   error: string
+  /**
+   * Version publicada MAS NUEVA que la instalada, si se sabe de alguna. '' si
+   * estas al dia.
+   *
+   * Es aparte de `version` y de `phase` a proposito: `phase` es lo que esta
+   * pasando AHORA (se apaga al decir "ahora no" y al reiniciar), mientras que
+   * esto es un hecho que sigue siendo verdad hasta que actualices. Es lo que
+   * mantiene encendido el punto del megafono; sin ello, quien cerrara el aviso
+   * se quedaba sin ninguna senal de que tenia una version vieja.
+   */
+  pending: string
 }
 
 // --- Musica: "Ahora suena" -------------------------------------------------

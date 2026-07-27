@@ -37,6 +37,7 @@ export function NewsPanel(): React.JSX.Element {
   const close = useTek((s) => s.closeNews)
   const openFeedback = useTek((s) => s.openFeedback)
   const version = useTek((s) => s.version)
+  const update = useTek((s) => s.update)
   const body = useRef<HTMLDivElement>(null)
 
   // Lo que no habia visto al abrir: son las entradas "nuevas" de esta visita. Se
@@ -84,6 +85,42 @@ export function NewsPanel(): React.JSX.Element {
         </header>
 
         <div className="news-body" ref={body} tabIndex={-1}>
+          {/* La que te falta va PRIMERA, arriba del todo del riel. No lleva la
+              lista de cambios de las demas porque no puede: las novedades viajan
+              dentro de cada version, y esta todavia no la tienes. Lo que se
+              enseña es lo unico que llega de fuera — las notas del release, tal
+              cual, aplanadas y con tope (ver plainNotes en Updater.ts). */}
+          {update.pending ? (
+            <section className="news-ver is-new is-pending">
+              <span className="news-node" aria-hidden />
+              <div className="news-meta">
+                <span className="news-num">{update.pending}</span>
+                <span className="news-tag">sin instalar</span>
+              </div>
+              <h2 className="news-ver-title">Hay una versión nueva</h2>
+              <div className="news-pending">
+                <p className="news-pending-notes">
+                  {update.phase === 'ready'
+                    ? 'Ya está descargada. Se instala sola al cerrar TEK, o reinicia ahora y la tienes.'
+                    : update.notes || 'Actualiza para ver qué trae.'}
+                </p>
+                {update.phase === 'downloading' ? (
+                  <button className="news-cta" disabled>
+                    Descargando… {update.percent}%
+                  </button>
+                ) : update.phase === 'ready' ? (
+                  <button className="news-cta" onClick={() => void window.tek.update.install()}>
+                    Reiniciar ahora
+                  </button>
+                ) : (
+                  <button className="news-cta" onClick={() => void window.tek.update.download()}>
+                    Descargar
+                  </button>
+                )}
+              </div>
+            </section>
+          ) : null}
+
           {NEWS.map((n, i) => (
             <section
               className={`news-ver ${i === hi ? 'is-current' : ''} ${fresh.has(n.version) ? 'is-new' : ''}`}

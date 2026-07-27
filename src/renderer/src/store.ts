@@ -163,7 +163,7 @@ export const useTek = create<TekState>((set, get) => ({
   recipeToast: null,
   pwOffer: null,
   fillAvail: null,
-  update: { phase: 'idle', version: '', notes: '', percent: 0, error: '' },
+  update: { phase: 'idle', version: '', notes: '', percent: 0, error: '', pending: '' },
   updateNote: '',
   media: { now: null, exclusive: false },
   recording: false,
@@ -218,11 +218,20 @@ export const useTek = create<TekState>((set, get) => ({
   },
   openNews: () => {
     void window.tek.setVisible(false)
-    // Abrirlas ES haberlas visto: se apaga el punto del ☰ para siempre en esta
-    // version. Se guarda en el perfil, no solo en memoria.
-    const version = get().version
-    if (version && get().profile?.newsSeen !== version) {
-      void window.tek.profile.set({ newsSeen: version }).then(get().setProfile)
+    // Abrirlas ES haberlas visto: se apaga el punto del megafono para siempre en
+    // esta version. Se guarda en el perfil, no solo en memoria.
+    //
+    // Con una version pendiente el punto NO se apaga (sigues teniendo una
+    // vieja), pero deja de latir: haberla visto anunciada basta para que no siga
+    // llamando la atencion. Las dos marcas viajan en la misma escritura.
+    const st = get()
+    const version = st.version
+    const pending = st.update.pending
+    const patch: Partial<UserProfile> = {}
+    if (version && st.profile?.newsSeen !== version) patch.newsSeen = version
+    if (pending && st.profile?.updateSeen !== pending) patch.updateSeen = pending
+    if (Object.keys(patch).length) {
+      void window.tek.profile.set(patch).then(get().setProfile)
     }
     set({ newsOpen: true, feedbackOpen: false, brainOpen: false, downloadsOpen: false, historyOpen: false, automationOpen: false, passwordsOpen: false, toolsMenuOpen: false })
   },

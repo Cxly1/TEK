@@ -182,8 +182,27 @@
   letter-spacing: -0.01em;
   color: #9ba0a6;
 }
-.news-ver.is-current .news-ver-title {
+.news-ver.is-current .news-ver-title,
+.news-ver.is-pending .news-ver-title {
   color: var(--text-hi);
+}
+
+/* --- La version que te falta ----------------------------------------------
+   Va primera en el riel y es lo unico del panel con un boton: aqui no se lee,
+   se actua. El cuerpo es prosa (las notas del release llegan aplanadas), no la
+   lista de frases sueltas de las versiones que si tienes. */
+
+.news-pending {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 11px;
+}
+.news-pending-notes {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #d6d8dc;
 }
 .news-items {
   margin: 0;
@@ -315,8 +334,11 @@
   color: var(--text-lo);
   line-height: 1.4;
 }
-/* Accion principal: mismo lenguaje que el boton primario del tutorial. */
-.fb-send {
+/* Accion principal: mismo lenguaje que el boton primario del tutorial. Lo
+   comparten enviar un reporte y descargar la version nueva — son las dos
+   unicas acciones de peso de estos paneles, y deben verse igual. */
+.fb-send,
+.news-cta {
   border: 1px solid rgba(244, 213, 138, 0.5);
   background: rgba(227, 179, 65, 0.08);
   border-radius: 9px;
@@ -329,13 +351,15 @@
   white-space: nowrap;
   transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
-.fb-send:hover:not(:disabled) {
+.fb-send:hover:not(:disabled),
+.news-cta:hover:not(:disabled) {
   border-color: var(--gold-bright);
   background: rgba(227, 179, 65, 0.16);
   box-shadow: 0 0 0 3px var(--gold-glow);
 }
 /* Deshabilitado se VE (atenuado), nunca desaparece. */
-.fb-send:disabled {
+.fb-send:disabled,
+.news-cta:disabled {
   opacity: 0.32;
   cursor: default;
 }

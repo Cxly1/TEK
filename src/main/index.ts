@@ -344,6 +344,7 @@ function registerIpc(): void {
     greeted: false,
     tourDone: false,
     newsSeen: '',
+    updateSeen: '',
     createdAt: Date.now()
   }
   ipcMain.handle(IPC.profileGet, (e) =>
@@ -366,7 +367,14 @@ function registerIpc(): void {
   // --- Actualizacion de la app ---------------------------------------------
   // Nada se descarga sin un si explicito: `updateCheck` solo mira, y es
   // `updateDownload` (que solo dispara la UI tras el clic) quien baja.
-  const IDLE_UPDATE: UpdateState = { phase: 'idle', version: '', notes: '', percent: 0, error: '' }
+  const IDLE_UPDATE: UpdateState = {
+    phase: 'idle',
+    version: '',
+    notes: '',
+    percent: 0,
+    error: '',
+    pending: ''
+  }
   ipcMain.handle(IPC.updateCheck, (e) =>
     fromShell(e) ? updater?.check(true) ?? IDLE_UPDATE : IDLE_UPDATE
   )

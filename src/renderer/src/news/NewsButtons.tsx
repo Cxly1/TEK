@@ -1,6 +1,6 @@
 import { motion } from 'motion/react'
 import { useTek } from '@/store'
-import { unseenNews } from './unseen'
+import { newsDot } from './unseen'
 
 /**
  * Los dos botones de la barra: Novedades y Reportar un fallo.
@@ -21,12 +21,19 @@ const SPRING = { type: 'spring', stiffness: 400, damping: 22 } as const
 
 export function NewsButton(): React.JSX.Element {
   const openNews = useTek((s) => s.openNews)
-  const unseen = useTek(unseenNews)
+  const dot = useTek(newsDot)
+  const pending = useTek((s) => s.update.pending)
   return (
     <motion.button
       className="tb-tool no-drag"
       data-tour="news"
-      title={unseen ? 'Novedades — hay cosas nuevas' : 'Novedades: qué cambió en cada versión'}
+      title={
+        pending
+          ? `Novedades — TEK ${pending} está lista para instalar`
+          : dot
+            ? 'Novedades — hay cosas nuevas'
+            : 'Novedades: qué cambió en cada versión'
+      }
       onClick={openNews}
       initial="rest"
       animate="rest"
@@ -51,8 +58,9 @@ export function NewsButton(): React.JSX.Element {
         <path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14" />
         <path d="M8 6v8" />
       </motion.svg>
-      {/* Solo Novedades lleva marca, y solo si hay algo sin ver. */}
-      {unseen && <span className="tb-tool-dot is-ping" />}
+      {/* Solo Novedades lleva marca. Late si hay algo sin ver; se queda quieta
+          mientras siga habiendo una version sin instalar (ver newsDot). */}
+      {dot && <span className={`tb-tool-dot ${dot === 'ping' ? 'is-ping' : ''}`} />}
     </motion.button>
   )
 }
