@@ -111,9 +111,9 @@ const AD_SCRIPTS = 'wv:adScripts'
   if (plainOk) {
     try {
       ;(0, eval)(bundle)
-      console.debug(`[tek] adblock: ${parts.length} scriptlets via eval`)
+      console.info(`[tek] adblock: ${parts.length} scriptlets via eval`)
     } catch (e) {
-      console.debug('[tek] adblock: eval del bundle rechazado:', e)
+      console.info('[tek] adblock: eval del bundle rechazado:', e)
     }
     return
   }
@@ -129,13 +129,42 @@ const AD_SCRIPTS = 'wv:adScripts'
     const el = document.createElement('script')
     // `.text` acepta el TrustedScript (o el string pelado si no hubiera TT).
     ;(el as unknown as { text: unknown }).text = policy ? policy.createScript(bundle) : bundle
-    // A document_start existe <html>; <head> puede que aun no. Un <script> inline
-    // creado por JS (no por el parser) corre igual bajo strict-dynamic.
-    ;(document.head || document.documentElement).appendChild(el)
-    el.remove()
-    console.debug(`[tek] adblock: ${parts.length} scriptlets via <script> (TT=${!!policy})`)
+    const inject = (): void => {
+      // Medido en YouTube: `document.head` Y `document.documentElement` pueden
+      // ser AMBOS null aqui todavia (mas temprano que el "a document_start ya
+      // existe <html>" que se asumia). Sin este chequeo el appendChild tiraba
+      // TypeError silencioso (el catch lo comia como `console.debug`) y los
+      // scriptlets JAMAS corrian en un sitio con Trusted Types -> por eso
+      // YouTube nunca tuvo la poda de adPlacements/el anti-muro, todo este
+      // tiempo, sin ningun aviso visible.
+      const target = document.head || document.documentElement
+      if (!target) return
+      target.appendChild(el)
+      el.remove()
+      // info y no debug A PROPOSITO (mismo motivo que el spoof de lact): DevTools
+      // esconde los debug salvo subir a Verbose, y esta capa debe fallar RUIDOSA.
+      console.info(`[tek] adblock: ${parts.length} scriptlets via <script> (TT=${!!policy})`)
+    }
+    if (document.documentElement) {
+      inject()
+    } else {
+      // `document` (a diferencia de documentElement) siempre existe. El
+      // callback de MutationObserver es un microtask: corre en cuanto el
+      // parser inserta <html>, ANTES de que siga con <head> y el primer
+      // <script> de la pagina — así seguimos ganando la carrera.
+      const mo = new MutationObserver(() => {
+        if (!document.documentElement) return
+        mo.disconnect()
+        try {
+          inject()
+        } catch (e) {
+          console.info('[tek] adblock: inyeccion diferida rechazada:', e)
+        }
+      })
+      mo.observe(document, { childList: true })
+    }
   } catch (e) {
-    console.debug('[tek] adblock: inyeccion por <script> rechazada:', e)
+    console.info('[tek] adblock: inyeccion por <script> rechazada:', e)
   }
 })()
 
@@ -162,6 +191,7 @@ const AD_SCRIPTS = 'wv:adScripts'
 
   /** Mete un lact enorme en el cuerpo JSON del /player. Devuelve el cuerpo tal
    *  cual si no es el JSON esperado (jamas rompe la peticion). */
+  let avisado = false
   const spoofBody = (body: string): string => {
     try {
       const data = JSON.parse(body) as {
@@ -169,8 +199,16 @@ const AD_SCRIPTS = 'wv:adScripts'
       }
       const cpc = data?.context?.contentPlaybackContext
       if (!cpc || typeof cpc !== 'object') return body
+      const antes = cpc.lactMilliseconds
       // Enorme = "hace una eternidad que no interactuo" = inactivo -> sin ads.
       cpc.lactMilliseconds = String(Date.now())
+      // La unica senal de que esta capa esta VIVA. `info` y no `debug` A PROPOSITO:
+      // DevTools esconde los debug salvo que subas el nivel a Verbose, y el
+      // problema de esta capa siempre ha sido fallar en silencio.
+      if (!avisado) {
+        avisado = true
+        console.info(`[tek] lact spoofeado en /player: ${antes} -> ${cpc.lactMilliseconds}`)
+      }
       return JSON.stringify(data)
     } catch {
       return body
@@ -193,8 +231,47 @@ const AD_SCRIPTS = 'wv:adScripts'
               : input instanceof URL
                 ? input.href
                 : (input as Request).url
-          if (isPlayerReq(url) && init && typeof init.body === 'string') {
-            init = { ...init, body: spoofBody(init.body) }
+          if (isPlayerReq(url)) {
+            if (init && typeof init.body === 'string') {
+              // (a) Cuerpo suelto en init. Sincrono, como siempre.
+              init = { ...init, body: spoofBody(init.body) }
+            } else if (
+              (!init || init.body == null) &&
+              typeof (input as Request)?.clone === 'function'
+            ) {
+              // (b) EL CAMINO DE HOY, y por el que esta capa llevaba dias muerta:
+              // YouTube pide /player con `fetch(new Request(url, {body}))` — `init`
+              // llega UNDEFINED y el cuerpo viaja DENTRO del Request, asi que la
+              // rama (a) no casaba nunca y la peticion salia con el lact real
+              // (medido con __ztest__/yt-probe.mjs: 5 de 5 llamadas asi).
+              // Leer el cuerpo de un Request es asincrono: por eso SOLO esta rama
+              // devuelve una promesa. El resto del trafico sigue por el camino
+              // sincrono de abajo, sin pagar nada.
+              const req = input as Request
+              return (async () => {
+                try {
+                  const body = await req.clone().text()
+                  const spoofed = spoofBody(body)
+                  // `new Request(req, {body})` conserva metodo, cabeceras y
+                  // credenciales del original; solo cambia el cuerpo.
+                  if (spoofed !== body) {
+                    return f.call(this as typeof window, new Request(req, { body: spoofed }), init)
+                  }
+                } catch (e) {
+                  console.info('[tek] lact: no se pudo reescribir el Request:', e)
+                }
+                return f.call(this as typeof window, req, init)
+              })()
+            } else {
+              // Ni cuerpo en init ni Request clonable: YouTube ha vuelto a cambiar
+              // de forma. QUE SE OIGA — el fallo silencioso de esta capa es
+              // justo lo que costo una semana de anuncios sin enterarnos.
+              console.info(
+                '[tek] lact NO aplicado en /player: forma de llamada desconocida',
+                typeof input,
+                init ? Object.keys(init).join(',') : 'sin init'
+              )
+            }
           }
         } catch {
           /* cualquier fallo: peticion intacta */
@@ -252,7 +329,12 @@ const AD_SCRIPTS = 'wv:adScripts'
     ) {
       try {
         const url = urlByXhr.get(this) ?? ''
-        if (isPlayerReq(url) && typeof body === 'string') body = spoofBody(body)
+        if (isPlayerReq(url)) {
+          if (typeof body === 'string') body = spoofBody(body)
+          // Mismo criterio que en fetch: si /player pasa por aqui y no podemos
+          // tocarlo, que se oiga en vez de dejarlo pasar callando.
+          else console.info('[tek] lact NO aplicado en /player por XHR:', typeof body)
+        }
       } catch {
         /* peticion intacta */
       }
