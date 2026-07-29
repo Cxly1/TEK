@@ -85,7 +85,7 @@ function MediaButtons({ now }: { now: NowPlayingInfo | null }): React.JSX.Elemen
 }
 
 /** Fila de navegacion: los tres botones, pegados junto al mini-player. SIEMPRE
- *  puestos (Migue: "debe de estar siempre") — deshabilitados sin musica. */
+ *  puestos, deshabilitados sin musica — no deben desaparecer del layout. */
 export function NowPlaying(): React.JSX.Element {
   const now = useNow()
   return (
