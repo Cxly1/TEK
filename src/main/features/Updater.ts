@@ -1,4 +1,6 @@
 import { app, powerMonitor } from 'electron'
+import { join } from 'node:path'
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 // OJO, import POR DEFECTO y no `import { autoUpdater }`: electron-updater es
 // CommonJS y declara sus exports con `Object.defineProperty(exports, ...)`, que
 // el analizador de Node NO detecta. Como este main se compila a ESM
@@ -123,6 +125,30 @@ export class Updater {
   private wired = false
   /** La comprobacion en curso la pidio la persona: hay que contestarle siempre. */
   private manual = false
+  /**
+   * Rastro persistente (userData/tek-updater.log): en el .exe empaquetado no
+   * hay terminal, asi que el `console.error` de mas abajo no lo ve nadie. El
+   * caso real que motivo esto: v0.3.2 no avisó sola en TEK instalado y no
+   * quedó ningun rastro de por que. Se recorta a las ultimas ~200 lineas.
+   */
+  private readonly logFile = join(app.getPath('userData'), 'tek-updater.log')
+
+  private log(line: string): void {
+    try {
+      appendFileSync(this.logFile, `${new Date().toISOString()} ${line}\n`, 'utf8')
+    } catch {
+      /* que falle el log no debe tumbar el updater */
+    }
+  }
+
+  private trimLog(): void {
+    try {
+      const lines = readFileSync(this.logFile, 'utf8').split('\n').filter(Boolean)
+      if (lines.length > 200) writeFileSync(this.logFile, lines.slice(-200).join('\n') + '\n', 'utf8')
+    } catch {
+      /* no existe todavia, o no se pudo leer: no pasa nada */
+    }
+  }
 
   constructor(private readonly emit: (s: UpdateState) => void) {
     // La marca de "tienes una vieja" sobrevive al reinicio, asi que el punto se
@@ -159,13 +185,19 @@ export class Updater {
   /** Arranca las comprobaciones periodicas. No-op fuera del TEK instalado. */
   start(): void {
     if (!app.isPackaged) return
+    this.trimLog()
+    this.log(`start(): version=${app.getVersion()} pending-guardado=${this.prefs.data.pending || '(ninguna)'}`)
     this.wire()
     if (this.firstTimer || this.timer) return
     this.firstTimer = setTimeout(() => {
       this.firstTimer = null
+      this.log('primer chequeo (25s tras arrancar)')
       void this.check(false)
     }, FIRST_CHECK_MS)
-    this.timer = setInterval(() => void this.check(false), EVERY_MS)
+    this.timer = setInterval(() => {
+      this.log('chequeo periodico (cada 3h)')
+      void this.check(false)
+    }, EVERY_MS)
     // El portatil que pasa la noche suspendido con TEK abierta: al levantar la
     // tapa se mira ya, en vez de esperar a que toque el siguiente tic (el
     // setInterval no corre mientras el equipo duerme). Con margen, que la red
@@ -174,6 +206,7 @@ export class Updater {
       if (this.resumeTimer) clearTimeout(this.resumeTimer)
       this.resumeTimer = setTimeout(() => {
         this.resumeTimer = null
+        this.log('chequeo tras reanudar de suspension')
         void this.check(false)
       }, AFTER_RESUME_MS)
     }
@@ -187,14 +220,19 @@ export class Updater {
     au.autoDownload = false
     au.autoInstallOnAppQuit = true
 
-    au.on('checking-for-update', () => this.set({ phase: 'checking', error: '' }))
+    au.on('checking-for-update', () => {
+      this.log('checking-for-update')
+      this.set({ phase: 'checking', error: '' })
+    })
 
     au.on('update-available', (info) => {
+      this.log(`update-available version=${info.version} manual=${this.manual} skipped-guardado=${this.prefs.data.skipped || '(ninguna)'}`)
       // Lo primero, y pase lo que pase debajo: existe una mas nueva. Esto es lo
       // que enciende el punto del megafono y no se apaga por cerrar el aviso.
       this.remember(info.version)
       // Ya dijo "ahora no" a ESTA version: no insistimos (salvo que lo pida el).
       if (!this.manual && this.prefs.data.skipped === info.version) {
+        this.log('  -> silenciado: ya se habia dicho "ahora no" a esta version')
         this.set({ phase: 'idle' })
         return
       }
@@ -209,7 +247,8 @@ export class Updater {
 
     // Estas al dia: si quedaba marca de una pendiente, ya no vale (te la
     // instalaste, o la release se retiro).
-    au.on('update-not-available', () => {
+    au.on('update-not-available', (info) => {
+      this.log(`update-not-available (version actual=${info?.version ?? app.getVersion()})`)
       this.forget()
       this.set({ phase: 'idle', version: '', notes: '', percent: 0, error: '', pending: '' })
     })
@@ -218,13 +257,15 @@ export class Updater {
       this.set({ phase: 'downloading', percent: Math.max(0, Math.min(100, Math.round(p.percent))) })
     )
 
-    au.on('update-downloaded', (info) =>
+    au.on('update-downloaded', (info) => {
+      this.log(`update-downloaded version=${info.version}`)
       this.set({ phase: 'ready', version: info.version, percent: 100, error: '' })
-    )
+    })
 
     au.on('error', (err) => {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[TEK Updater]', msg)
+      this.log(`error: ${msg}`)
       // Que falle una comprobacion de fondo NO se enseña: no hay nada que la
       // persona pueda hacer y solo seria ruido. Si lo pidio el, o si se cayo a
       // mitad de una descarga que estaba viendo, entonces si se cuenta.
@@ -260,8 +301,11 @@ export class Updater {
     }
     try {
       await electronUpdater.autoUpdater.checkForUpdates()
-    } catch {
-      /* el manejador de 'error' ya dejo el estado como toca */
+    } catch (err) {
+      // Rechazo directo de checkForUpdates (antes de que dispare 'error'
+      // arriba): sin este log, un fallo aqui no dejaba NINGUN rastro.
+      this.log(`checkForUpdates() rechazo: ${err instanceof Error ? err.message : String(err)}`)
+      /* el manejador de 'error' ya dejo el estado como toca, si llego a disparar */
     }
     return this.state
   }
