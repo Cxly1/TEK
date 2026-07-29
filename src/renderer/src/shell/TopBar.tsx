@@ -285,12 +285,18 @@ export function TopBar(): React.JSX.Element {
                 <button
                   className={`tab-group-label ${hasActive ? 'has-active' : ''}`}
                   onClick={() => toggleGroup(run.group)}
-                  title={isCollapsed ? `Mostrar ${run.tabs.length} pestañas` : 'Ocultar grupo'}
+                  // UN SOLO title en el contenedor: antes .tab-group-name tenia el suyo
+                  // propio (el hostname a secas) y, al ser el elemento mas interno bajo
+                  // el cursor, pisaba a este — el aviso de "Mostrar N pestañas" nunca se
+                  // veia porque el mouse casi siempre esta sobre el texto del nombre.
+                  title={
+                    isCollapsed
+                      ? `${prettyHost(run.group)} — ${run.tabs.length} pestañas (clic para mostrar)`
+                      : `${prettyHost(run.group)} — clic para ocultar`
+                  }
                 >
                   <span className={`tab-group-caret ${isCollapsed ? 'is-closed' : ''}`}>⌄</span>
-                  <span className="tab-group-name" title={run.group}>
-                    {prettyHost(run.group)}
-                  </span>
+                  <span className="tab-group-name">{prettyHost(run.group)}</span>
                   {isCollapsed && <span className="tab-group-count">{run.tabs.length}</span>}
                 </button>
                 {!isCollapsed && run.tabs.map(renderTab)}

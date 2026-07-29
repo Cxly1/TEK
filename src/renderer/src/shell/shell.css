@@ -335,6 +335,12 @@
   color: var(--g);
   border-radius: 7px 7px 0 0;
   transition: background 0.14s ease;
+  /* Sin esto, al faltar espacio en la barra (muchas pestanas abiertas) este
+     flex item se negaba a encoger por debajo del ancho SIN truncar del
+     nombre (min-width:auto de flexbox), y en vez de elipsar desbordaba y
+     empujaba/solapaba al contador de al lado. Con min-width:0 el hijo con
+     ellipsis (.tab-group-name) manda de verdad. */
+  min-width: 0;
 }
 .tab-group-label:hover {
   background: color-mix(in srgb, var(--g) 18%, transparent);
@@ -346,6 +352,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Como flex item DENTRO de .tab-group-label, este span tiene su propio
+     min-width:auto por defecto — sin ponerlo a 0 aqui, max-width+ellipsis
+     de arriba no aplicaba de verdad bajo presion (el flexbox lo mantenia al
+     ancho completo del texto y lo que cedia era el layout, no el texto). */
+  min-width: 0;
+  flex-shrink: 1;
   font-family: var(--font-ui);
   font-weight: 600;
   font-size: 11px;
@@ -381,6 +393,7 @@
   line-height: 1;
   opacity: 0.85;
   transition: transform 0.18s ease;
+  flex-shrink: 0;
 }
 .tab-group-caret.is-closed {
   transform: rotate(-90deg);
@@ -395,6 +408,9 @@
   background: color-mix(in srgb, var(--g) 30%, transparent);
   color: var(--text-hi);
   font-size: 9.5px;
+  /* La burbuja nunca cede: si el flexbox se aprieta, quien encoge es el
+     nombre (tiene ellipsis para eso), no este circulo. */
+  flex-shrink: 0;
 }
 /* Grupo plegado: la rama central marca si la pestana activa esta dentro. */
 .tab-group.is-collapsed {

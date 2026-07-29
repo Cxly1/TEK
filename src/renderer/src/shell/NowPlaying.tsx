@@ -21,15 +21,23 @@ function useNow(): NowPlayingInfo | null {
   return now && !gone ? now : null
 }
 
-/** Los tres botones (⏮ ⏯ ⏭). Sin soporte del sitio = deshabilitado, no invisible. */
-function MediaButtons({ now }: { now: NowPlayingInfo }): React.JSX.Element {
-  const label = now.artist ? `${now.title} — ${now.artist}` : now.title
+/**
+ * Los tres botones (⏮ ⏯ ⏭). Sin soporte del sitio = deshabilitado, no
+ * invisible — y lo mismo aplica cuando no hay NADA sonando: `now` puede ser
+ * null (sin musica en ninguna pestana), y en vez de desaparecer los tres
+ * botones se quedan puestos, deshabilitados. Antes el hueco entero se
+ * escondia con `now &&`, y como la fila vive junto a los controles fijos de
+ * la barra (mini-player, escudo…) el layout "saltaba" cada vez que la musica
+ * arrancaba o paraba.
+ */
+function MediaButtons({ now }: { now: NowPlayingInfo | null }): React.JSX.Element {
+  const label = now ? (now.artist ? `${now.title} — ${now.artist}` : now.title) : ''
   return (
     <>
       <button
         className="tb-mbtn tb-mprev"
         title="Anterior"
-        disabled={!now.canPrev}
+        disabled={!now?.canPrev}
         onClick={() => void window.tek.media.prev()}
       >
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
@@ -44,7 +52,8 @@ function MediaButtons({ now }: { now: NowPlayingInfo }): React.JSX.Element {
       </button>
       <button
         className="tb-mbtn tb-mplay"
-        title={now.playing ? `Pausar — ${label}` : `Reanudar — ${label}`}
+        title={now ? (now.playing ? `Pausar — ${label}` : `Reanudar — ${label}`) : 'Sin música'}
+        disabled={!now}
         onClick={() => void window.tek.media.playPause()}
       >
         {/* El `d` de este path lo pisa el CSS (.tb-mplay path): ahi vive el morph. */}
@@ -58,7 +67,7 @@ function MediaButtons({ now }: { now: NowPlayingInfo }): React.JSX.Element {
       <button
         className="tb-mbtn tb-mnext"
         title="Siguiente"
-        disabled={!now.canNext}
+        disabled={!now?.canNext}
         onClick={() => void window.tek.media.next()}
       >
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
@@ -75,12 +84,12 @@ function MediaButtons({ now }: { now: NowPlayingInfo }): React.JSX.Element {
   )
 }
 
-/** Fila de navegacion: solo los tres botones, pegados junto al mini-player. */
-export function NowPlaying(): React.JSX.Element | null {
+/** Fila de navegacion: los tres botones, pegados junto al mini-player. SIEMPRE
+ *  puestos (Migue: "debe de estar siempre") — deshabilitados sin musica. */
+export function NowPlaying(): React.JSX.Element {
   const now = useNow()
-  if (!now) return null
   return (
-    <div className={`tb-media no-drag ${now.playing ? 'is-playing' : ''}`}>
+    <div className={`tb-media no-drag ${now?.playing ? 'is-playing' : ''}`}>
       <MediaButtons now={now} />
     </div>
   )
