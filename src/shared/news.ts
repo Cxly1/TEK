@@ -31,6 +31,21 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    version: '0.3.3',
+    date: '2026-07-29',
+    title: 'Pestañas más prolijas',
+    items: [
+      'Los grupos de pestañas ya no se amontonan cuando tienes muchas abiertas.',
+      'Los controles de música se quedan siempre a la vista, suene algo o no.'
+    ]
+  },
+  {
+    version: '0.3.2',
+    date: '2026-07-28',
+    title: 'YouTube más limpio',
+    items: ['Bloqueo de anuncios en YouTube reforzado: se cuelan muchos menos.']
+  },
+  {
     version: '0.3.1',
     date: '2026-07-27',
     title: 'Que no se te pase una versión nueva',
