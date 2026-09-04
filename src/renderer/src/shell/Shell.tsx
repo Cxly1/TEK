@@ -5,6 +5,7 @@ import { useTek, useActiveTab } from '@/store'
 import { useArrowNav, type NavItemProps } from '@/lib/useArrowNav'
 import { groupColor } from '@/lib/groupColor'
 import { greetingForUser } from '@/lib/greeting'
+import { Offline } from '../offline/Offline'
 import { TopBar } from './TopBar'
 import { CanvasNowPlaying } from './NowPlaying'
 import { FindBar } from '../find/FindBar'
@@ -92,9 +93,12 @@ export function Shell(): React.JSX.Element {
   const findOpen = useTek((s) => s.findOpen)
   const active = useActiveTab()
   const tourOpen = useTek((s) => s.tourOpen)
+  // La carga de esta pestana fallo: en vez del lienzo va la pantalla "SIN SEÑAL"
+  // (el main ya ha apartado la vista nativa, asi que aqui hay sitio libre).
+  const offline = active?.offline ?? null
   // Con el tutorial abierto mostramos el lienzo aunque haya una web cargada: los
   // pasos señalan piezas suyas (buscador, accesos) y deben existir para medirlas.
-  const showCanvas = !active || active.blank || paletteOpen || tourOpen
+  const showCanvas = !offline && (!active || active.blank || paletteOpen || tourOpen)
   // ¿Hay algo por encima del lienzo? Entonces NO le robamos el foco del teclado:
   // cada overlay (paleta, paneles, reanudar sesión, rutina) gestiona el suyo.
   const overlayUp = useTek(
@@ -109,7 +113,8 @@ export function Shell(): React.JSX.Element {
       s.passwordsOpen ||
       s.newsOpen ||
       s.feedbackOpen ||
-      s.tourOpen
+      s.tourOpen ||
+      s.arcadeOpen
   )
 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
@@ -219,6 +224,7 @@ export function Shell(): React.JSX.Element {
       <TopBar />
       <div className="shell-body">
         <AnimatePresence>{findOpen && <FindBar key="find" />}</AnimatePresence>
+        {offline && <Offline info={offline} />}
         {showCanvas && (
           <div className="newtab">
             {/* Misma esquina que en una pagina (la fila de navegacion no existe

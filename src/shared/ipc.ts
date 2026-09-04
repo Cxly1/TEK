@@ -156,6 +156,11 @@ export const IPC = {
   updateInstall: 'update:install',
   updateDismiss: 'update:dismiss',
 
+  // Arcade (INTERFERENCIA): marcas y ajuste de sonido, en su propio JSON
+  arcadeStats: 'arcade:stats',
+  arcadeSubmit: 'arcade:submit',
+  arcadeSetMuted: 'arcade:setMuted',
+
   // Musica / "Ahora suena" (controla la pestana que esta sonando)
   mediaGetState: 'media:getState',
   mediaPlayPause: 'media:playPause',
@@ -260,6 +265,33 @@ export interface TabMeta {
   favicon?: string | null
   /** true si esta pestana esta ahora mismo en el mini-player (Picture-in-Picture). */
   pip?: boolean
+  /** La carga fallo: el shell tapa la vista con la pantalla "SIN SEÑAL". null = todo bien. */
+  offline?: OfflineInfo | null
+}
+
+/**
+ * Por que se quedo una pestana sin pagina. TEK no deja que se vea la pantalla de
+ * error cruda de Chromium: la sustituye por la suya (con el arcade dentro).
+ */
+export interface OfflineInfo {
+  /** La direccion a la que no se pudo llegar. */
+  url: string
+  /** Codigo de Chromium (negativo). -106 = sin red, -105 = DNS, -118 = tiempo... */
+  code: number
+  /** El nombre tecnico del fallo (ERR_NAME_NOT_RESOLVED y compania). */
+  desc: string
+}
+
+/** Marcas del arcade. Viven en su propio JSON, jamas salen del equipo. */
+export interface ArcadeStats {
+  /** Mejor puntuacion. */
+  record: number
+  /** Oleada mas lejana alcanzada. */
+  oleadaMax: number
+  /** Partidas jugadas. */
+  partidas: number
+  /** Si el jugador dejo el sonido apagado. */
+  mudo: boolean
 }
 
 /** De donde salio el motor de adblock activo (para diagnostico). */
@@ -788,6 +820,14 @@ export interface TekApi {
     contextMenu(id: string): Promise<void>
   }
   /** Perfil local: el nombre con el que TEK te saluda y si ya viste el tutorial. */
+  arcade: {
+    /** Marcas guardadas (record, oleada maxima, partidas, sonido). */
+    stats(): Promise<ArcadeStats>
+    /** Cierra una partida: devuelve las marcas ya actualizadas. */
+    registrar(puntos: number, oleada: number): Promise<ArcadeStats>
+    /** Recuerda si el sonido queda apagado. */
+    setMudo(mudo: boolean): Promise<ArcadeStats>
+  }
   profile: {
     get(): Promise<UserProfile>
     /** Guarda un cambio parcial y devuelve el perfil resultante. */

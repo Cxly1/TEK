@@ -35,6 +35,7 @@ interface Helpers {
   openDownloads: () => void
   openAutomation: () => void
   openPasswords: () => void
+  openArcade: () => void
   /** Copia un valor (dev utils) y cierra. */
   copy: (v: string) => void
   /** Crea un watcher sobre la pestana activa. */
@@ -84,6 +85,17 @@ function envSwitchCmds(activeUrl: string, servers: DevServer[], h: Helpers): Cmd
   }
   return out.slice(0, 3)
 }
+
+/** Por que nombres se puede llamar al arcade desde la paleta. */
+const CLAVES_ARCADE = [
+  'interferencia',
+  'arcade',
+  'juego',
+  'jugar',
+  'marcianitos',
+  'naves',
+  'partida'
+]
 
 function buildCommands(
   input: string,
@@ -201,6 +213,18 @@ function buildCommands(
       run: () => h.navigate(e.url)
     })
     nHist++
+  }
+
+  // El arcade. No es una herramienta del navegador, asi que no vive en el menu
+  // ☰ con las demas: aparece si lo llamas por su nombre o por lo que es.
+  if (raw.length >= 2 && CLAVES_ARCADE.some((k) => k.startsWith(lower))) {
+    cmds.push({
+      id: 'arcade',
+      label: 'INTERFERENCIA',
+      icon: '▚',
+      sub: 'el arcade de TEK',
+      run: () => h.openArcade()
+    })
   }
 
   // Automatizacion que casa por nombre: workspaces, snippets, macros, recetas.
@@ -333,6 +357,7 @@ export function CommandPalette(): React.JSX.Element {
   const openDownloads = useTek((s) => s.openDownloads)
   const openAutomation = useTek((s) => s.openAutomation)
   const openPasswords = useTek((s) => s.openPasswords)
+  const openArcade = useTek((s) => s.openArcade)
   const activeId = useTek((s) => s.activeId)
   const activeTab = useTek((s) => s.tabs.find((t) => t.id === s.activeId))
 
@@ -414,6 +439,10 @@ export function CommandPalette(): React.JSX.Element {
     openPasswords: () => {
       closePalette()
       openPasswords()
+    },
+    openArcade: () => {
+      closePalette()
+      openArcade()
     },
     copy: (v) => {
       void navigator.clipboard.writeText(v)

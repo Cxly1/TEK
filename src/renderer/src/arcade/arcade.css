@@ -1,0 +1,111 @@
+/* INTERFERENCIA — el marco alrededor del tubo. Todo lo de dentro es canvas. */
+
+.arc-overlay {
+  position: fixed;
+  top: var(--topbar-h);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  /* Fondo opaco a proposito: NADA de backdrop-filter. Un blur a pantalla
+     completa por debajo de un bucle a 60 fps es la receta para los tirones. */
+  background: radial-gradient(70% 60% at 50% 42%, #0b0c0f 0%, var(--bg-void) 74%);
+}
+
+.arc-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.arc-marca {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: var(--text-hi);
+}
+.arc-sep {
+  flex: 1;
+}
+.arc-record {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-lo);
+}
+.arc-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-lo);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.arc-btn:hover {
+  color: var(--gold-bright);
+  background: var(--gold-glow);
+}
+.arc-btn:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.arc-caja {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+}
+
+/* El tubo. El cursor se esconde: dentro del juego el puntero ES la nave. */
+.arc-tubo {
+  display: block;
+  border-radius: 10px;
+  border: 1px solid #191c20;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 24px 70px rgba(0, 0, 0, 0.65),
+    0 0 90px rgba(242, 243, 245, 0.035);
+  cursor: none;
+  touch-action: none;
+}
+
+.arc-pie {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  height: 32px;
+  flex: none;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  color: var(--text-lo);
+}
+.arc-pie kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  margin-right: 4px;
+  border: 1px solid #23272d;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  font: inherit;
+  color: var(--phosphor);
+  opacity: 0.75;
+}

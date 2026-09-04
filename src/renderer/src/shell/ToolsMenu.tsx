@@ -17,6 +17,7 @@ export function ToolsMenu(): React.JSX.Element {
   const openPasswords = useTek((s) => s.openPasswords)
   const openAutomation = useTek((s) => s.openAutomation)
   const openBrain = useTek((s) => s.openBrain)
+  const openArcade = useTek((s) => s.openArcade)
   const openTour = useTek((s) => s.openTour)
   const openNews = useTek((s) => s.openNews)
   const pending = useTek((s) => s.update.pending)
@@ -64,6 +65,13 @@ export function ToolsMenu(): React.JSX.Element {
     { id: 'pw', icon: '⚿', label: 'Contraseñas', sub: 'vault cifrado', run: openPasswords },
     { id: 'auto', icon: '⚡', label: 'Automatización', sub: 'recetas · workspaces · macros', run: openAutomation },
     { id: 'brain', icon: '✦', label: 'Lo que TEK sabe de ti', sub: 'tu perfil', run: openBrain },
+    {
+      id: 'arcade',
+      icon: '▚',
+      label: 'INTERFERENCIA',
+      sub: 'el arcade · también sale cuando algo no carga',
+      run: openArcade
+    },
     {
       id: 'audio1',
       icon: '♫',

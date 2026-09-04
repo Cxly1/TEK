@@ -45,6 +45,11 @@ const api: TekApi = {
     get: () => ipcRenderer.invoke(IPC.profileGet),
     set: (patch) => ipcRenderer.invoke(IPC.profileSet, patch)
   },
+  arcade: {
+    stats: () => ipcRenderer.invoke(IPC.arcadeStats),
+    registrar: (puntos, oleada) => ipcRenderer.invoke(IPC.arcadeSubmit, puntos, oleada),
+    setMudo: (mudo) => ipcRenderer.invoke(IPC.arcadeSetMuted, mudo)
+  },
   version: () => ipcRenderer.invoke(IPC.appVersion),
   feedback: {
     send: (draft) => ipcRenderer.invoke(IPC.feedbackSend, draft)

@@ -13,6 +13,7 @@ import {
   IPC,
   WV,
   hostKey,
+  type ArcadeStats,
   type ClearScope,
   type DevSettings,
   type FindOptions,
@@ -34,6 +35,7 @@ import { Downloads } from './features/Downloads'
 import { Passwords } from './features/Passwords'
 import { Permissions } from './features/Permissions'
 import { Profile } from './features/Profile'
+import { Arcade } from './features/Arcade'
 import { Feedback } from './features/Feedback'
 import { Privacy } from './features/Privacy'
 import { Updater } from './features/Updater'
@@ -69,6 +71,7 @@ let passwords: Passwords | null = null
 let permissions: Permissions | null = null
 let privacy: Privacy | null = null
 let userProfile: Profile | null = null
+let arcade: Arcade | null = null
 let feedback: Feedback | null = null
 let updater: Updater | null = null
 let media: Media | null = null
@@ -175,12 +178,14 @@ function createWindow(): void {
     passwords?.dispose()
     permissions?.dispose()
     userProfile?.dispose()
+    arcade?.dispose()
     updater?.dispose()
     // Media sobrevive a la ventana (teclas globales), pero suelta las deps: sin
     // pestanas no hay destino y todo se vuelve no-op limpio.
     media?.attach(null)
     updater = null
     userProfile = null
+    arcade = null
     permissions = null
     privacy = null
     views = null
@@ -352,6 +357,17 @@ function registerIpc(): void {
   )
   ipcMain.handle(IPC.profileSet, (e, patch: Partial<UserProfile>) =>
     fromShell(e) ? userProfile?.set(patch) ?? DEFAULT_PROFILE : DEFAULT_PROFILE
+  )
+
+  // Arcade: marcas de INTERFERENCIA. Solo el shell, como el perfil — ninguna
+  // pagina debe poder leer ni plantar un record.
+  const SIN_MARCAS: ArcadeStats = { record: 0, oleadaMax: 0, partidas: 0, mudo: false }
+  ipcMain.handle(IPC.arcadeStats, (e) => (fromShell(e) ? arcade?.get() ?? SIN_MARCAS : SIN_MARCAS))
+  ipcMain.handle(IPC.arcadeSubmit, (e, puntos: unknown, oleada: unknown) =>
+    fromShell(e) ? arcade?.registrar(puntos, oleada) ?? SIN_MARCAS : SIN_MARCAS
+  )
+  ipcMain.handle(IPC.arcadeSetMuted, (e, mudo: unknown) =>
+    fromShell(e) ? arcade?.setMudo(mudo) ?? SIN_MARCAS : SIN_MARCAS
   )
 
   ipcMain.handle(IPC.appVersion, (e) => (fromShell(e) ? app.getVersion() : ''))
@@ -686,6 +702,7 @@ app.whenReady().then(async () => {
   bridge = new AgentBridge()
   passwords = new Passwords()
   userProfile = new Profile()
+  arcade = new Arcade()
   // Estrenar TEK no cuenta como novedad: ver Profile.seedNews.
   userProfile.seedNews(app.getVersion())
   // Reportar un fallo. El sitio solo se lee si la persona marca la casilla, y

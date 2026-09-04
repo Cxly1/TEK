@@ -64,6 +64,11 @@ repetirlo cuando quieras desde **☰ → Repetir tutorial**.
   consola, userscripts por sitio, vigías de URL, macros grabadas y un puente HTTP local
   opcional para agentes.
 - Radar de servidores de desarrollo: si tienes Vite en `:5173`, la nueva pestaña te lo ofrece.
+- **Cuando una página no carga**, TEK pone su propia pantalla —el motivo en español y un
+  botón para reintentar, que se dispara solo en cuanto vuelve la red— en vez de la de
+  Chromium. Y dentro trae **INTERFERENCIA**, un arcade de naves con oleadas infinitas,
+  potenciadores y un superpoder que barre la pantalla. También se abre desde **☰** o
+  escribiendo *juego* en `Ctrl+K`.
 
 ---
 

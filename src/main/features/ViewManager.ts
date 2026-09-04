@@ -7,6 +7,7 @@ import {
   WV,
   hostKey,
   type FindOptions,
+  type OfflineInfo,
   type PipState,
   type SessionPeek,
   type TabMeta,
@@ -32,6 +33,8 @@ interface Tab {
   audible: boolean
   /** Apagado diferido del indicador de audio (para que no parpadee). */
   audibleOffTimer: NodeJS.Timeout | null
+  /** La ultima carga fallo: el shell tapa la vista con su pantalla "SIN SEÑAL". */
+  offline: OfflineInfo | null
 }
 
 /** Particion persistente compartida: cookies/login sobreviven a los reinicios. */
@@ -243,7 +246,9 @@ export class ViewManager {
 
   private shouldShowActive(): boolean {
     const a = this.active
-    return !!a && !a.blank && !this.overlayHidden
+    // Una pestana con la carga fallida se oculta igual que una en blanco: lo que
+    // se ve es la pantalla "SIN SEÑAL" del renderer, no la de Chromium.
+    return !!a && !a.blank && !a.offline && !this.overlayHidden
   }
 
   private layout(): void {
@@ -417,7 +422,15 @@ export class ViewManager {
       this.applyUaFor(wc, url)
     })
     wc.on('did-start-navigation', (_e, url, _inPlace, isMainFrame) => {
-      if (isMainFrame) this.applyUaFor(wc, url)
+      if (!isMainFrame) return
+      this.applyUaFor(wc, url)
+      // Intentarlo otra vez borra el fallo anterior: si esta tambien falla,
+      // did-fail-load lo volvera a poner con el motivo nuevo.
+      if (tab.offline) {
+        tab.offline = null
+        this.applyVisibility()
+        this.emit()
+      }
     })
     // Un popup creado desde esta pestana (login OAuth) tambien queda blindado:
     // sus window.open pasan por el mismo control que los de una pestana.
@@ -452,6 +465,23 @@ export class ViewManager {
           total: result.matches
         })
       }
+    })
+    // La carga se cayo (sin red, DNS, tiempo agotado...). En vez de dejar ver la
+    // pantalla de error cruda de Chromium, TEK oculta la vista y el shell pinta
+    // la suya — con el arcade dentro para la espera.
+    wc.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      // Solo el marco principal: que se caiga un iframe de anuncios no es que la
+      // pagina no cargue. Y -3 (ABORTED) no es un fallo: es una carga que otra
+      // navegacion, una descarga o el propio usuario han cancelado.
+      if (!isMainFrame || errorCode === -3) return
+      if (!validatedURL || !/^https?:\/\//i.test(validatedURL)) return
+      tab.offline = { url: validatedURL, code: errorCode, desc: errorDescription || '' }
+      tab.blank = false
+      // La pestana se agrupa por el sitio al que INTENTABAS ir: sin esto se
+      // quedaria con el grupo de la pagina anterior (o sin ninguno).
+      tab.group = hostKey(validatedURL)
+      this.applyVisibility()
+      this.emit()
     })
     wc.on('did-start-loading', push)
     wc.on('did-stop-loading', push)
@@ -684,12 +714,19 @@ export class ViewManager {
         muted: false,
         blocked: 0,
         favicon: null,
-        pip: tab.id === this.mini.tabId
+        pip: tab.id === this.mini.tabId,
+        offline: null
       }
     }
     return {
       id: tab.id,
-      title: tab.blank ? 'Nueva pestaña' : wc.getTitle() || wc.getURL(),
+      // Con la carga caida, el titulo lo pone TEK: el de Chromium es el de su
+      // pagina de error, que aqui no se ve nunca.
+      title: tab.offline
+        ? hostKey(tab.offline.url) || 'Sin señal'
+        : tab.blank
+          ? 'Nueva pestaña'
+          : wc.getTitle() || wc.getURL(),
       url: tab.blank ? '' : wc.getURL(),
       loading: !tab.blank && wc.isLoading(),
       canGoBack: wc.navigationHistory.canGoBack(),
@@ -700,7 +737,8 @@ export class ViewManager {
       muted: wc.isAudioMuted(),
       blocked: tab.blank ? 0 : this.adblock.blockedFor(wc.id),
       favicon: tab.blank ? null : this.favicons.get(tab.group),
-      pip: tab.id === this.mini.tabId
+      pip: tab.id === this.mini.tabId,
+      offline: tab.offline
     }
   }
 
@@ -783,7 +821,8 @@ export class ViewManager {
       group: safe ? hostKey(safe) : '',
       visitId: null,
       audible: false,
-      audibleOffTimer: null
+      audibleOffTimer: null,
+      offline: null
     }
     this.win.contentView.addChildView(view)
     this.tabs.push(tab)

@@ -31,6 +31,16 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    version: '0.4.0',
+    date: '2026-09-04',
+    title: 'Cuando una página no carga',
+    items: [
+      'Si un sitio no abre, TEK te lo explica en español y te deja reintentar de un clic.',
+      'Y mientras vuelve la señal, tienes un arcade dentro: naves, marcianitos, potenciadores y récord.',
+      'También puedes jugar cuando quieras, desde el menú ☰.'
+    ]
+  },
+  {
     version: '0.3.3',
     date: '2026-07-29',
     title: 'Pestañas más prolijas',

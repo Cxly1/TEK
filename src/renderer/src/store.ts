@@ -48,6 +48,8 @@ interface TekState {
   feedbackOpen: boolean
   /** Menu unico de herramientas (☰ de la barra) desplegado. */
   toolsMenuOpen: boolean
+  /** INTERFERENCIA (el arcade) en pantalla. */
+  arcadeOpen: boolean
   /** Perfil de quien usa TEK. null = todavia no llego del main. */
   profile: UserProfile | null
   /** Version de TEK en marcha ('' hasta que llega del main). Decide las novedades. */
@@ -109,6 +111,8 @@ interface TekState {
   closeFeedback: () => void
   openToolsMenu: () => void
   closeToolsMenu: () => void
+  openArcade: () => void
+  closeArcade: () => void
   setProfile: (p: UserProfile) => void
   openTour: () => void
   closeTour: () => void
@@ -147,6 +151,7 @@ export const useTek = create<TekState>((set, get) => ({
   newsOpen: false,
   feedbackOpen: false,
   toolsMenuOpen: false,
+  arcadeOpen: false,
   profile: null,
   version: '',
   setVersion: (v) => set({ version: v }),
@@ -258,6 +263,29 @@ export const useTek = create<TekState>((set, get) => ({
     // herramienta, el panel correspondiente la mantiene oculta por su cuenta.
     void window.tek.setVisible(true)
     set({ toolsMenuOpen: false })
+  },
+  openArcade: () => {
+    // Como los paneles: la vista nativa se dibuja por encima del renderer, asi
+    // que hay que apartarla o el juego quedaria debajo de la pagina.
+    void window.tek.setVisible(false)
+    set({
+      arcadeOpen: true,
+      toolsMenuOpen: false,
+      paletteOpen: false,
+      brainOpen: false,
+      downloadsOpen: false,
+      historyOpen: false,
+      automationOpen: false,
+      passwordsOpen: false,
+      newsOpen: false,
+      feedbackOpen: false
+    })
+  },
+  closeArcade: () => {
+    // El main decide si la vista vuelve de verdad: si la pestana esta en blanco
+    // o su carga fallo, se queda oculta y detras aparece el lienzo que toque.
+    void window.tek.setVisible(true)
+    set({ arcadeOpen: false })
   },
   setProfile: (profile) => set({ profile }),
   openTour: () => {

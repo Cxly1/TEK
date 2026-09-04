@@ -19,6 +19,7 @@ import { FeedbackPanel } from './news/FeedbackPanel'
 import { PasswordToasts } from './passwords/PasswordToasts'
 import { UpdateToast } from './update/UpdateToast'
 import { ToolsMenu } from './shell/ToolsMenu'
+import { Arcade } from './arcade/Arcade'
 import { Welcome } from './onboarding/Welcome'
 import { Tour } from './onboarding/Tour'
 
@@ -33,6 +34,7 @@ export function App(): React.JSX.Element {
   const automationOpen = useTek((s) => s.automationOpen)
   const passwordsOpen = useTek((s) => s.passwordsOpen)
   const toolsMenuOpen = useTek((s) => s.toolsMenuOpen)
+  const arcadeOpen = useTek((s) => s.arcadeOpen)
   const profile = useTek((s) => s.profile)
   const tourOpen = useTek((s) => s.tourOpen)
   const welcomeOpen = useTek((s) => s.welcomeOpen)
@@ -138,9 +140,12 @@ export function App(): React.JSX.Element {
         st.feedbackOpen ||
         st.toolsMenuOpen ||
         st.tourOpen ||
-        st.welcomeOpen
+        st.welcomeOpen ||
+        // El arcade se queda TODAS las teclas (flechas, espacio, Esc incluido):
+        // sus mandos escuchan en captura y ya resuelven salir y pausar.
+        st.arcadeOpen
       ) {
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' && !st.arcadeOpen) {
           if (st.toolsMenuOpen) st.closeToolsMenu()
           else if (st.brainOpen) st.closeBrain()
           else if (st.downloadsOpen) st.closeDownloads()
@@ -288,6 +293,9 @@ export function App(): React.JSX.Element {
       <AnimatePresence>{newsOpen && <NewsPanel key="news" />}</AnimatePresence>
       <AnimatePresence>{feedbackOpen && <FeedbackPanel key="feedback" />}</AnimatePresence>
       <AnimatePresence>{toolsMenuOpen && <ToolsMenu key="toolsmenu" />}</AnimatePresence>
+      <AnimatePresence>
+        {arcadeOpen && phase === 'shell' && <Arcade key="arcade" />}
+      </AnimatePresence>
       <AnimatePresence>
         {routine !== null && phase === 'shell' && <RoutineToast key="routine" />}
       </AnimatePresence>
