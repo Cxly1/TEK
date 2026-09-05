@@ -802,6 +802,11 @@ document.addEventListener(
   // Permitido en el escudo: ni lo miramos (ver SITE_UNTOUCHED arriba).
   if (untouched) return
 
+  // TODOS los avisos de esta capa van por `console.info`, NO por `console.debug`:
+  // DevTools esconde los debug salvo que subas el nivel a Verbose, y esta capa
+  // MUTEA y ADELANTA audio — cuando se equivoca de pista tiene que poder verse
+  // en la consola sin saber de antemano que hay que buscarla. Misma leccion que
+  // costo una semana de anuncios en la capa de YouTube.
   const TAG = '[tek] spotify-adblock:'
   const BLOB = 'blob:https://open.spotify.com/'
 
@@ -821,7 +826,7 @@ document.addEventListener(
       /* JSON roto: empezamos de cero */
     }
     if (stamps.length >= 2) {
-      console.debug(`${TAG} ${why}, pero ya recargue 2 veces en 5 min; no insisto`)
+      console.info(`${TAG} ${why}, pero ya recargue 2 veces en 5 min; no insisto`)
       return
     }
     stamps.push(Date.now())
@@ -830,7 +835,7 @@ document.addEventListener(
     } catch {
       /* sin sessionStorage: recargamos igual */
     }
-    console.debug(`${TAG} ${why}; recargando`)
+    console.info(`${TAG} ${why}; recargando`)
     location.reload()
   }
 
@@ -869,7 +874,7 @@ document.addEventListener(
           } catch {
             /* no restaurable en este estado */
           }
-          console.debug(`${TAG} elemento restaurado para la musica`)
+          console.info(`${TAG} elemento restaurado para la musica`)
         }
         return
       }
@@ -889,7 +894,10 @@ document.addEventListener(
       } catch {
         /* currentTime/playbackRate no asignables aun */
       }
-      console.debug(`${TAG} anuncio de audio saltado (dur=${dur})`)
+      // El `src` va EN el aviso: es el unico dato que distingue "he saltado un
+      // anuncio" de "me he comido una cancion de verdad". Sin el, esta capa solo
+      // puede acusarse o defenderse de oidas.
+      console.info(`${TAG} audio tratado como anuncio (dur=${dur}) src=${src.slice(0, 90)}`)
     }
     for (const ev of ['loadedmetadata', 'durationchange', 'play', 'playing'] as const) {
       el.addEventListener(ev, onState)
@@ -978,7 +986,7 @@ document.addEventListener(
       const label = btn?.getAttribute('aria-label') ?? ''
       if (btn && /^(play|reproducir)/i.test(label)) {
         btn.click()
-        console.debug(`${TAG} musica reanudada tras saltar el anuncio`)
+        console.info(`${TAG} musica reanudada tras saltar el anuncio`)
         clearInterval(timer)
       } else if (/^(pause|pausar)/i.test(label) || Date.now() > deadline) {
         clearInterval(timer)
