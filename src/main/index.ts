@@ -620,7 +620,7 @@ function registerIpc(): void {
   // preload lo pregunta sincrono antes de parchear nada (ver WV.siteUntouched).
   ipcMain.on(WV.siteUntouched, (e, host: unknown) => {
     const h = typeof host === 'string' ? host.replace(/^www\./, '') : ''
-    e.returnValue = !!h && !!adblock?.siteAllowed(h)
+    e.returnValue = !!h && !!adblock?.siteUntouched(h)
   })
   // Scriptlets del adblock en document_start: la pieza que mata el muro
   // anti-adblock de YouTube (ver WV.adScripts y Adblock.scriptsFor).

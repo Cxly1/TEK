@@ -386,6 +386,21 @@ export class Adblock {
   }
 
   /**
+   * ¿TEK debe dejar esta pagina COMPLETAMENTE en paz? (lo pregunta el preload en
+   * WV.siteUntouched, antes de parchear nada).
+   *
+   * No es lo mismo que `siteAllowed`: apagar el escudo con el interruptor global
+   * tambien cuenta. Antes NO contaba, y era un embuste — con el adblock apagado
+   * se caian el filtrado de red y los scriptlets, pero los defusers del preload
+   * (el de anuncios de Spotify, que MUTEA y ADELANTA audio) seguian corriendo.
+   * Quien apagaba el escudo para descartarlo de un problema se llevaba una
+   * respuesta falsa, que es justo como se pierde una tarde de diagnostico.
+   */
+  siteUntouched(host: string): boolean {
+    return !this.enabled || this.allow.has(host)
+  }
+
+  /**
    * Scriptlets (los `+js(...)` de las listas) que tocan en `url`. Los pide el
    * preload de cada pagina en DOCUMENT_START via sendSync — el metodo de
    * uBO/Brave: un set-constant solo desarma el detector anti-adblock de
