@@ -841,13 +841,30 @@ document.addEventListener(
 
   // 1) Capa PRINCIPAL — heuristica de <audio>, agnostica del backend.
   //    La musica real se reproduce con MediaSource: su `src` es siempre un blob
-  //    `blob:https://open.spotify.com/...`. Un audio cuyo src NO es ese blob y
-  //    que dura poco es un anuncio -> lo silenciamos y saltamos al final, con lo
-  //    que su `ended` dispara y el reproductor avanza solo.
+  //    `blob:https://open.spotify.com/...`. Un audio que NO es ese blob Y del que
+  //    CONSTA que dura poco (o que Spotify mismo esta rotulando como publicidad)
+  //    es un anuncio -> lo silenciamos y saltamos al final, con lo que su `ended`
+  //    dispara y el reproductor avanza solo.
+  //    REGLA (2026-09-04, despues de comerse canciones en una cuenta Premium, que
+  //    no tiene anuncios de audio siquiera): hace falta EVIDENCIA POSITIVA. La
+  //    duda —`duration` todavia NaN, que es el estado de cualquier elemento
+  //    recien creado— NO cuenta como anuncio. Y toda salida de "no es un anuncio"
+  //    restaura el elemento, no solo la del blob.
   //    GOTCHA (en vivo 2026-07-18): Spotify REUSA el mismo elemento para la
   //    siguiente cancion. Sin restaurar muted/playbackRate al volver el blob, la
   //    musica quedaba MUDA (el bug de "no pasa el anuncio pero tampoco la
   //    cancion"). Igual que hace la seccion de YouTube con su <video>.
+  // ¿Lo que suena AHORA es publicidad segun la propia interfaz de Spotify? Es la
+  // unica evidencia POSITIVA que no depende de adivinar por la pinta del audio.
+  // Vive aqui arriba porque la usan LAS DOS capas: la heuristica de <audio> de
+  // abajo y el vigia de rescate del final.
+  const AD_RX = /\b(advertisement|anuncio)\b/i
+  const adOnScreen = (): boolean => {
+    if (AD_RX.test(document.title)) return true
+    const w = document.querySelector('[data-testid="now-playing-widget"]')
+    return !!w && AD_RX.test(w.textContent ?? '')
+  }
+
   const media = new Set<HTMLMediaElement>() // iterable: el vigia de abajo lo recorre
   const doctored = new WeakSet<HTMLMediaElement>() // elementos tocados en modo anuncio
   const lastPos = new WeakMap<HTMLMediaElement, number>()
@@ -861,26 +878,41 @@ document.addEventListener(
       if (oldest) media.delete(oldest)
     }
     media.add(el)
+    // Deshace lo que le hicimos a un elemento al tomarlo por anuncio. Se llama
+    // desde TODAS las salidas de "esto no es un anuncio", no solo desde la del
+    // blob: esa fuga era justo la que dejaba una cancion muda y a 16x PARA
+    // SIEMPRE, porque la salvaguarda de los 45s salia con un `return` pelado.
+    const restaurar = (): void => {
+      if (!doctored.has(el)) return
+      doctored.delete(el)
+      try {
+        el.muted = false
+        el.playbackRate = 1
+      } catch {
+        /* no restaurable en este estado */
+      }
+      console.info(`${TAG} elemento restaurado para la musica`)
+    }
+
     const onState = (): void => {
       const src = el.currentSrc || el.src || ''
       if (!src) return
+      // Musica real (MediaSource): ni se toca.
       if (src.startsWith(BLOB)) {
-        // Musica real. Si ESTE elemento venia de un anuncio, restauralo.
-        if (doctored.has(el)) {
-          doctored.delete(el)
-          try {
-            el.muted = false
-            el.playbackRate = 1
-          } catch {
-            /* no restaurable en este estado */
-          }
-          console.info(`${TAG} elemento restaurado para la musica`)
-        }
+        restaurar()
         return
       }
       const dur = el.duration
-      // Salvaguarda anti-falsos-positivos: solo audio corto / sin duracion aun.
-      if (isFinite(dur) && dur >= 45) return
+      // EVIDENCIA POSITIVA O NO SE TOCA. Antes bastaba con "no es un blob y no me
+      // consta que dure >=45s" — y `duration` es NaN en TODO elemento recien
+      // creado, o sea que en el `play()` la respuesta por defecto era "esto es un
+      // anuncio". Con eso, una cancion normal se llevaba muted + 16x y se consumia
+      // en segundos: exactamente el "me salta canciones". La duda NO cuenta.
+      const corto = isFinite(dur) && dur > 0 && dur < 45
+      if (!corto && !adOnScreen()) {
+        restaurar()
+        return
+      }
       adSeenAt = Date.now()
       doctored.add(el)
       try {
@@ -889,8 +921,10 @@ document.addEventListener(
         /* muted read-only en algun estado */
       }
       try {
-        if (isFinite(dur) && dur > 0) el.currentTime = dur // consume el anuncio
-        else el.playbackRate = 16 // aun sin duracion: acelera hasta que termine
+        if (corto) el.currentTime = dur // consume el anuncio
+        // Sin duracion, pero con Spotify rotulando publicidad en su propia UI:
+        // acelerar es seguro porque en cuanto deje de rotularla, `restaurar()`.
+        else el.playbackRate = 16
       } catch {
         /* currentTime/playbackRate no asignables aun */
       }
@@ -926,12 +960,6 @@ document.addEventListener(
   //    mismo le damos Play. [Antes aqui vivia una capa que mutaba las
   //    respuestas de track-playback con campos adivinados; fuera — era la otra
   //    sospechosa de atascar la maquina de estados y la de audio ya cubre.]
-  const AD_RX = /\b(advertisement|anuncio)\b/i
-  const adOnScreen = (): boolean => {
-    if (AD_RX.test(document.title)) return true
-    const w = document.querySelector('[data-testid="now-playing-widget"]')
-    return !!w && AD_RX.test(w.textContent ?? '')
-  }
   const musicAlive = (): boolean => {
     for (const el of media) {
       const src = el.currentSrc || el.src || ''
