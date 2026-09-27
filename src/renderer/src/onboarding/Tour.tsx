@@ -80,7 +80,7 @@ function buildSteps(name: string): Step[] {
       id: 'tools',
       target: 'tools',
       title: 'Todo lo demás vive aquí',
-      body: 'Un único menú: historial, descargas, contraseñas (cifradas por tu propio Windows), automatización y el perfil de lo que TEK ha aprendido. Desde aquí también puedes repetir este tutorial.'
+      body: 'Un único menú: historial, descargas y contraseñas (cifradas por tu propio Windows). En «Más opciones», la automatización, lo que TEK ha aprendido de ti y este mismo tutorial.'
     },
     {
       id: 'news',

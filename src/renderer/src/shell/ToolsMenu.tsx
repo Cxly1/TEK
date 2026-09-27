@@ -1,124 +1,120 @@
-import { useEffect } from 'react'
-import { motion } from 'motion/react'
+import type { LayerAnchor, MenuItem, MenuModel } from '@shared/ipc'
 import { useTek } from '@/store'
-import './toolsmenu.css'
 
 /**
- * Menu unico de herramientas del navegador (☰ de la barra). Reune lo que antes
- * vivia disperso (botones sueltos ⚡/✦ + Historial/Descargas de la 2a fila + la
- * paleta): Historial, Descargas, Contrasenas, Automatizacion y "Lo que TEK sabe
- * de ti". La vista se oculta mientras esta abierto (lo hace el store) para que el
- * desplegable no quede tapado por el WebContentsView nativo.
+ * Menu unico de herramientas (☰ de la barra): QUE lleva y QUE hace cada opcion.
+ * Pintarlo es cosa de la capa flotante (MenuPanel), encima de la pagina viva;
+ * abrirlo y cerrarlo, del LayerController.
+ *
+ * Arriba solo lo que se usa a diario; lo demas vive en "Más opciones".
  */
-export function ToolsMenu(): React.JSX.Element {
-  const closeToolsMenu = useTek((s) => s.closeToolsMenu)
-  const openHistory = useTek((s) => s.openHistory)
-  const openDownloads = useTek((s) => s.openDownloads)
-  const openPasswords = useTek((s) => s.openPasswords)
-  const openAutomation = useTek((s) => s.openAutomation)
-  const openBrain = useTek((s) => s.openBrain)
-  const openArcade = useTek((s) => s.openArcade)
-  const openTour = useTek((s) => s.openTour)
-  const openNews = useTek((s) => s.openNews)
-  const pending = useTek((s) => s.update.pending)
-  const setUpdateNote = useTek((s) => s.setUpdateNote)
-  const exclusive = useTek((s) => s.media.exclusive)
-  const setMedia = useTek((s) => s.setMedia)
-  const activeDl = useTek((s) => s.downloads.filter((d) => d.state === 'progressing').length)
-  const unseenDone = useTek((s) =>
-    s.downloads.filter(
-      (d) => d.state === 'completed' && d.finishedAt != null && d.finishedAt > s.downloadsSeenAt
-    ).length
-  )
-  const dlBadge = activeDl || unseenDone
-
-  // Esc cierra el menu (igual que clic fuera).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        closeToolsMenu()
-      }
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [closeToolsMenu])
-
-  // Buscar a mano: el main solo MIRA (no descarga). Si no hay nada nuevo no
-  // llega ningun evento, asi que el "ya estas al dia" lo damos con el resultado
-  // que devuelve la llamada; el resto de fases las pinta el toast solo.
-  const checkUpdates = (): void => {
-    closeToolsMenu()
-    setUpdateNote('Buscando actualizaciones…')
-    void window.tek.update.check().then((s) => {
-      if (s.phase === 'idle') setUpdateNote('Ya tienes la última versión de TEK.')
-      else setUpdateNote('')
+export function buildToolsModel(
+  anchor: LayerAnchor,
+  s: { pending: string; exclusive: boolean; dlBadge: number }
+): MenuModel {
+  const daily: MenuItem[] = [
+    { id: 'history', icon: 'history', label: 'Historial', hint: 'Lo que has visitado' },
+    {
+      id: 'downloads',
+      icon: 'download',
+      label: 'Descargas',
+      hint: 'Tus archivos',
+      badge: s.dlBadge || undefined
+    },
+    { id: 'pw', icon: 'key', label: 'Contraseñas', hint: 'Vault cifrado' }
+  ]
+  // Con una version esperando, deja de ser una pregunta escondida en "Más
+  // opciones" y sube a la vista como respuesta (la marca vive en el megafono,
+  // pero quien abra el menu tampoco tiene que adivinarlo).
+  if (s.pending) {
+    daily.push({
+      id: 'update',
+      icon: 'refresh',
+      label: `Actualizar a TEK ${s.pending}`,
+      hint: 'Ya publicada · la tienes en Novedades',
+      dot: true
     })
   }
-
-  // Novedades y Reportar un fallo NO viven aqui: tienen su propio boton en la
-  // barra (ver NewsButtons). Dentro del menu no se veian, que era justo el
-  // problema.
-  const items: { id: string; icon: string; label: string; sub: string; run: () => void; badge?: number }[] = [
-    { id: 'history', icon: '↺', label: 'Historial', sub: 'lo que has visitado', run: openHistory },
-    { id: 'downloads', icon: '↧', label: 'Descargas', sub: 'tus archivos', run: openDownloads, badge: dlBadge },
-    { id: 'pw', icon: '⚿', label: 'Contraseñas', sub: 'vault cifrado', run: openPasswords },
-    { id: 'auto', icon: '⚡', label: 'Automatización', sub: 'recetas · workspaces · macros', run: openAutomation },
-    { id: 'brain', icon: '✦', label: 'Lo que TEK sabe de ti', sub: 'tu perfil', run: openBrain },
+  const extras: MenuItem[] = [
     {
       id: 'arcade',
-      icon: '▚',
+      icon: 'gamepad',
       label: 'INTERFERENCIA',
-      sub: 'el arcade · también sale cuando algo no carga',
-      run: openArcade
+      hint: 'El arcade · también sale cuando algo no carga'
     },
-    {
-      id: 'audio1',
-      icon: '♫',
-      label: 'Una pestaña sonando a la vez',
-      sub: exclusive ? 'activado — al sonar una, TEK pausa las demás' : 'desactivado',
-      // Toggle en sitio: el menu se queda abierto para ver el cambio.
-      run: () => void window.tek.media.setExclusive(!exclusive).then(setMedia)
-    },
-    { id: 'tour', icon: '◎', label: 'Repetir tutorial', sub: 'el paseo guiado · y tu nombre', run: openTour },
-    // Con una version esperando, la entrada deja de ser una pregunta y pasa a
-    // ser la respuesta: la marca vive en el megafono, pero quien abra el menu
-    // tampoco tiene que adivinarlo.
-    pending
-      ? {
-          id: 'update',
-          icon: '⟲',
-          label: `Actualizar a TEK ${pending}`,
-          sub: 'ya publicada · la tienes en Novedades',
-          run: openNews
-        }
-      : {
-          id: 'update',
-          icon: '⟲',
-          label: 'Buscar actualizaciones',
-          sub: 'nada se descarga sin permiso',
-          run: checkUpdates
-        }
+    { id: 'tour', icon: 'route', label: 'Repetir tutorial', hint: 'El paseo guiado · y tu nombre' }
   ]
+  if (!s.pending) {
+    extras.push({
+      id: 'update',
+      icon: 'refresh',
+      label: 'Buscar actualizaciones',
+      hint: 'Nada se descarga sin permiso'
+    })
+  }
+  return {
+    anchor,
+    pages: [
+      {
+        id: 'root',
+        groups: [daily, [{ id: 'more', icon: 'more', label: 'Más opciones', page: 'more' }]]
+      },
+      {
+        id: 'more',
+        title: 'Más opciones',
+        groups: [
+          [
+            {
+              id: 'auto',
+              icon: 'zap',
+              label: 'Automatización',
+              hint: 'Recetas · workspaces · macros'
+            },
+            { id: 'brain', icon: 'sparkles', label: 'Lo que TEK sabe de ti', hint: 'Tu perfil' },
+            {
+              id: 'audio1',
+              icon: 'music',
+              label: 'Una pestaña a la vez',
+              hint: s.exclusive
+                ? 'Encendido: al sonar una pestaña, TEK pausa las demás'
+                : 'Apagado: pueden sonar varias pestañas a la vez',
+              toggle: s.exclusive
+            }
+          ],
+          extras
+        ]
+      }
+    ]
+  }
+}
 
-  return (
-    <div className="tm-overlay" onMouseDown={closeToolsMenu}>
-      <motion.div
-        className="tm-menu"
-        onMouseDown={(e) => e.stopPropagation()}
-        initial={{ opacity: 0, y: -8, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-      >
-        {items.map((it) => (
-          <button key={it.id} className="tm-item" onClick={it.run}>
-            <span className="tm-icon">{it.icon}</span>
-            <span className="tm-label">{it.label}</span>
-            {it.badge ? <span className="tm-badge">{it.badge}</span> : null}
-            <span className="tm-sub">{it.sub}</span>
-          </button>
-        ))}
-      </motion.div>
-    </div>
-  )
+/** Ejecuta lo elegido en el menu. Todo menos el interruptor cierra el menu. */
+export function runToolsPick(id: string): void {
+  const st = useTek.getState()
+  if (id === 'audio1') {
+    // Interruptor en sitio: el menu sigue abierto y se repinta con el estado nuevo.
+    void window.tek.media.setExclusive(!st.media.exclusive).then(st.setMedia)
+    return
+  }
+  st.closeToolsMenu()
+  if (id === 'history') st.openHistory()
+  else if (id === 'downloads') st.openDownloads()
+  else if (id === 'pw') st.openPasswords()
+  else if (id === 'auto') st.openAutomation()
+  else if (id === 'brain') st.openBrain()
+  else if (id === 'arcade') st.openArcade()
+  else if (id === 'tour') st.openTour()
+  else if (id === 'update') {
+    if (st.update.pending) {
+      st.openNews()
+      return
+    }
+    // Buscar a mano: el main solo MIRA (no descarga). Si no hay nada nuevo no
+    // llega ningun evento, asi que el "ya estas al dia" sale del resultado de la
+    // llamada; el resto de fases las pinta el toast solo.
+    st.setUpdateNote('Buscando actualizaciones…')
+    void window.tek.update.check().then((u) => {
+      useTek.getState().setUpdateNote(u.phase === 'idle' ? 'Ya tienes la última versión de TEK.' : '')
+    })
+  }
 }

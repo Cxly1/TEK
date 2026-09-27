@@ -36,6 +36,11 @@ export class Downloads {
   private readonly file = join(app.getPath('userData'), 'tek-downloads.json')
   private emitTimer: NodeJS.Timeout | null = null
   private saveTimer: NodeJS.Timeout | null = null
+  /**
+   * ¿El archivo sigue en disco? Con cache corta: list() corre en CADA empuje de
+   * progreso (hasta 4 por segundo) y no hace falta mirar el disco tantas veces.
+   */
+  private readonly onDisk = new Map<string, { at: number; missing: boolean }>
   /** Avisa al renderer; index.ts lo cablea para enviar la lista por IPC. */
   onChange: (() => void) | null = null
 
@@ -120,8 +125,21 @@ export class Downloads {
 
   // --- API publica -----------------------------------------------------------
 
+  /**
+   * Las terminadas llevan `missing` si su archivo ya no esta (borrado o movido):
+   * el panel lo dice en vez de ofrecer un "abrir" que no haria nada.
+   */
   list(): DownloadEntry[] {
-    return this.entries
+    const now = Date.now()
+    return this.entries.map((e) => {
+      if (e.state !== 'completed') return e
+      let seen = this.onDisk.get(e.id)
+      if (!seen || now - seen.at > 5000) {
+        seen = { at: now, missing: !existsSync(e.savePath) }
+        this.onDisk.set(e.id, seen)
+      }
+      return seen.missing ? { ...e, missing: true } : e
+    })
   }
 
   openFile(id: string): void {
@@ -142,6 +160,7 @@ export class Downloads {
   remove(id: string): void {
     if (this.live.has(id)) return
     this.entries = this.entries.filter((e) => e.id !== id)
+    this.onDisk.delete(id)
     this.emit()
     this.save()
   }
@@ -149,6 +168,7 @@ export class Downloads {
   /** Limpia el historial dejando solo lo que sigue descargandose. */
   clear(): void {
     this.entries = this.entries.filter((e) => this.live.has(e.id))
+    this.onDisk.clear()
     this.emit()
     this.save()
   }

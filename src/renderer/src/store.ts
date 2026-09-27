@@ -188,21 +188,23 @@ export const useTek = create<TekState>((set, get) => ({
     void window.tek.setVisible(true)
     set({ brainOpen: false })
   },
+  // Descargas e Historial viven en la capa flotante, ENCIMA de la pagina (ver
+  // LayerController): no la ocultan. Al abrirlos se devuelve la pagina por si
+  // venias de un panel que si la tapaba (cerebro, automatizacion...); cerrarlos
+  // no la toca, porque puede estar abriendose otro panel de los que la ocultan.
   openDownloads: () => {
-    void window.tek.setVisible(false)
+    void window.tek.setVisible(true)
     // Abrir el panel = "ya las vi": limpia el badge de completadas no vistas.
     set({ downloadsOpen: true, downloadsSeenAt: Date.now(), historyOpen: false, brainOpen: false, automationOpen: false, passwordsOpen: false, toolsMenuOpen: false })
   },
   closeDownloads: () => {
-    void window.tek.setVisible(true)
     set({ downloadsOpen: false })
   },
   openHistory: () => {
-    void window.tek.setVisible(false)
+    void window.tek.setVisible(true)
     set({ historyOpen: true, downloadsOpen: false, brainOpen: false, automationOpen: false, passwordsOpen: false, toolsMenuOpen: false })
   },
   closeHistory: () => {
-    void window.tek.setVisible(true)
     set({ historyOpen: false })
   },
   openAutomation: () => {
@@ -253,15 +255,11 @@ export const useTek = create<TekState>((set, get) => ({
     set({ feedbackOpen: false })
   },
   openToolsMenu: () => {
-    // Como los paneles: ocultamos la vista para que el desplegable no quede
-    // tapado por el WebContentsView nativo (se dibuja por encima del renderer).
-    void window.tek.setVisible(false)
+    // Como Descargas e Historial, el menu NO oculta la pagina: se pinta en la
+    // capa flotante por encima de ella (ver LayerController).
     set({ toolsMenuOpen: true })
   },
   closeToolsMenu: () => {
-    // Cancelar (clic fuera / Esc): devolvemos la vista. Si se elige una
-    // herramienta, el panel correspondiente la mantiene oculta por su cuenta.
-    void window.tek.setVisible(true)
     set({ toolsMenuOpen: false })
   },
   openArcade: () => {

@@ -1,0 +1,193 @@
+/* Historial en la capa flotante (ver HistoryPanel). Base en layer.css. */
+
+/* La pagina sigue viva detras, solo atenuada (antes se quedaba en negro). */
+.lyh-scrim {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 6, 7, 0.42);
+  animation: lyh-fade 0.18s ease both;
+}
+@keyframes lyh-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Alto FIJO: al filtrar, el panel no salta de tamaño. Centrado por la rejilla
+   del velo (por eso relative, no absolute como los desplegables). */
+.ly-panel.lyh {
+  position: relative;
+  width: min(600px, 100%);
+  height: min(560px, calc(100vh - 110px));
+  border-radius: 14px;
+  transform-origin: center top;
+}
+.ly-head.lyh-head {
+  padding: 12px 10px 8px 18px;
+}
+.lyh-head .ly-title {
+  font-size: 15px;
+}
+
+.lyh-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  margin: 0 14px 6px;
+  padding: 0 12px;
+  border: 1px solid #23272c;
+  border-radius: 9px;
+  background: #0f1114;
+  color: var(--text-lo);
+  cursor: text;
+  transition: border-color 0.15s ease;
+}
+.lyh-search:focus-within {
+  border-color: #3a3f47;
+}
+.lyh-search .ly-ico {
+  width: 15px;
+  height: 15px;
+}
+.lyh-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text-hi);
+  font: inherit;
+  font-size: 13.5px;
+}
+.lyh-search input::placeholder {
+  color: var(--text-lo);
+}
+
+/* Cabecera del dia: gris y fina (el dorado se queda para lo que esta bajo el
+   cursor), pegada arriba mientras se hace scroll. */
+.lyh-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px 6px;
+  background: var(--bg-elevated);
+  font-size: 11.5px;
+  color: var(--text-lo);
+}
+.lyh-day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #23272c;
+}
+
+.ly-row.lyh-row {
+  min-height: 36px;
+  padding: 4px 4px 4px 10px;
+}
+.lyh-fav,
+.lyh-mono {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+}
+.lyh-fav {
+  object-fit: contain;
+}
+.lyh-mono {
+  display: grid;
+  place-items: center;
+  background: #23272c;
+  color: var(--text-lo);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+.lyh-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-hi);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lyh-name em {
+  font-style: normal;
+  color: var(--text-lo);
+}
+.lyh-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-lo);
+  font-variant-numeric: tabular-nums;
+}
+.lyh-host {
+  flex: none;
+  max-width: 150px;
+  font-size: 12px;
+  color: var(--text-lo);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lyh-time {
+  flex: none;
+  width: 40px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-lo);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mini menu del cepillo: borrar por rango, "Todo" con doble toque. */
+.lyh-clear {
+  position: absolute;
+  top: 44px;
+  right: 44px;
+  z-index: 3;
+  width: 210px;
+  padding: 5px;
+  background: #1b1e22;
+  border: 1px solid #2a2e34;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  animation: ly-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+.lyh-clear button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-hi);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.lyh-clear button:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.lyh-clear .is-danger {
+  color: var(--accent-warm);
+}
+.lyh-clear .is-armed {
+  background: rgba(255, 77, 61, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyh-scrim,
+  .lyh-clear {
+    animation: none;
+  }
+}

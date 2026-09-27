@@ -530,6 +530,11 @@
 .tb-tool.is-busy {
   color: var(--gold);
 }
+/* ☰ con su menu abierto: se queda encendido, como si siguiera bajo el cursor. */
+.tb-tool.is-open {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--gold-bright);
+}
 /* Novedades sin ver: un punto discreto, sin numero que contar. */
 .tb-tool-dot {
   position: absolute;

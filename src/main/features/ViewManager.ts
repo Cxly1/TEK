@@ -207,6 +207,13 @@ export class ViewManager {
   onAudibleStart: ((tabId: string) => void) | null = null
   /** ¿Abrir DevTools solas al navegar a este host? (ajuste localhost). */
   shouldAutoDevtools: ((host: string) => boolean) | null = null
+  /**
+   * Tras reordenar las vistas: la capa flotante (menu ☰, Descargas, Historial)
+   * vuelve al tope (FloatingLayer). Devuelve true si esta a la vista: entonces
+   * el teclado es SUYO y no se lo quitamos (una pestana de fondo que recarga
+   * tambien pasa por aqui).
+   */
+  onRestack: (() => boolean) | null = null
   /** UA default de la app (las pestanas vuelven a ella al salir de un host quisquilloso). */
   private readonly defaultUA = app.userAgentFallback
 
@@ -280,12 +287,21 @@ export class ViewManager {
     this.layout()
     // El mini siempre por encima de la pestana activa (re-eleva su z-order).
     if (this.mini.active) this.mini.raise()
-    // El foco del teclado sigue a lo que se ve: a la pagina activa cuando esta a
-    // la vista; al renderer (shell) cuando hay un overlay encima o es pestana en
-    // blanco. Asi la paleta, los paneles y la nueva pestana reciben flechas/Enter
-    // SIN un clic previo, y al cerrar la paleta la pagina recupera el teclado.
-    // (Era la causa de "no responde hasta dar click".)
-    if (showActive) {
+    // ...y la capa flotante, si esta a la vista, por encima de todo (con el teclado).
+    const menuOpen = this.onRestack?.() ?? false
+    if (!menuOpen) this.refocus()
+  }
+
+  /**
+   * El foco del teclado sigue a lo que se ve: a la pagina activa cuando esta a
+   * la vista; al renderer (shell) cuando hay un overlay encima o es pestana en
+   * blanco. Asi la paleta, los paneles y la nueva pestana reciben flechas/Enter
+   * SIN un clic previo, y al cerrar la paleta la pagina recupera el teclado.
+   * (Era la causa de "no responde hasta dar click".) Lo usa tambien la capa del
+   * menu ☰ al cerrarse, para devolver el teclado a donde estaba.
+   */
+  refocus(): void {
+    if (this.shouldShowActive()) {
       const wc = this.active?.view.webContents
       if (wc && !wc.isDestroyed()) wc.focus()
     } else if (!this.win.isDestroyed()) {

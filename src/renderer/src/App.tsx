@@ -8,9 +8,7 @@ import { CommandPalette } from './command/CommandPalette'
 import { SessionResume } from './shell/SessionResume'
 import { BrainPanel } from './brain/BrainPanel'
 import { RoutineToast } from './brain/RoutineToast'
-import { DownloadsPanel } from './downloads/DownloadsPanel'
 import { DownloadToast } from './downloads/DownloadToast'
-import { HistoryPanel } from './history/HistoryPanel'
 import { AutomationPanel } from './automation/AutomationPanel'
 import { AutoToast } from './automation/AutoToast'
 import { PasswordsPanel } from './passwords/PasswordsPanel'
@@ -18,7 +16,7 @@ import { NewsPanel } from './news/NewsPanel'
 import { FeedbackPanel } from './news/FeedbackPanel'
 import { PasswordToasts } from './passwords/PasswordToasts'
 import { UpdateToast } from './update/UpdateToast'
-import { ToolsMenu } from './shell/ToolsMenu'
+import { LayerController } from './shell/LayerController'
 import { Arcade } from './arcade/Arcade'
 import { Welcome } from './onboarding/Welcome'
 import { Tour } from './onboarding/Tour'
@@ -29,11 +27,8 @@ export function App(): React.JSX.Element {
   const resume = useTek((s) => s.resume)
   const routine = useTek((s) => s.routine)
   const brainOpen = useTek((s) => s.brainOpen)
-  const downloadsOpen = useTek((s) => s.downloadsOpen)
-  const historyOpen = useTek((s) => s.historyOpen)
   const automationOpen = useTek((s) => s.automationOpen)
   const passwordsOpen = useTek((s) => s.passwordsOpen)
-  const toolsMenuOpen = useTek((s) => s.toolsMenuOpen)
   const arcadeOpen = useTek((s) => s.arcadeOpen)
   const profile = useTek((s) => s.profile)
   const tourOpen = useTek((s) => s.tourOpen)
@@ -286,13 +281,13 @@ export function App(): React.JSX.Element {
       </AnimatePresence>
       <AnimatePresence>{paletteOpen && <CommandPalette key="palette" />}</AnimatePresence>
       <AnimatePresence>{brainOpen && <BrainPanel key="brain" />}</AnimatePresence>
-      <AnimatePresence>{downloadsOpen && <DownloadsPanel key="downloads" />}</AnimatePresence>
-      <AnimatePresence>{historyOpen && <HistoryPanel key="history" />}</AnimatePresence>
       <AnimatePresence>{automationOpen && <AutomationPanel key="automation" />}</AnimatePresence>
       <AnimatePresence>{passwordsOpen && <PasswordsPanel key="passwords" />}</AnimatePresence>
       <AnimatePresence>{newsOpen && <NewsPanel key="news" />}</AnimatePresence>
       <AnimatePresence>{feedbackOpen && <FeedbackPanel key="feedback" />}</AnimatePresence>
-      <AnimatePresence>{toolsMenuOpen && <ToolsMenu key="toolsmenu" />}</AnimatePresence>
+      {/* Menu ☰, Descargas e Historial se pintan en la capa flotante, encima de
+          la pagina viva; esto solo la abre y la cierra. */}
+      <LayerController />
       <AnimatePresence>
         {arcadeOpen && phase === 'shell' && <Arcade key="arcade" />}
       </AnimatePresence>

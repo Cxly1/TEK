@@ -1,0 +1,204 @@
+/* Capa flotante (ver LayerSurface): una vista nativa TRANSPARENTE que cubre la
+   ventana. Solo se pinta el panel; lo demas deja ver la pagina viva de debajo.
+   Aqui va lo comun a sus paneles (menu ☰, Descargas, Historial). */
+html[data-surface='layer'],
+html[data-surface='layer'] body {
+  background: transparent;
+}
+
+/* Lo que no es el panel: atrapa el clic de fuera para cerrar. */
+.ly-catcher {
+  position: fixed;
+  inset: 0;
+}
+
+.ly-panel {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid #2a2e34;
+  border-radius: var(--radius);
+  /* Flota sobre paginas claras y oscuras: sombra corta y suave (una larga dejaba
+     un halo gris sucio sobre fondos blancos); el borde ya marca el contorno. */
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.34),
+    0 2px 6px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  transform-origin: top right;
+  animation: ly-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+@keyframes ly-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ly-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 10px 8px 16px;
+}
+.ly-title {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-hi);
+}
+
+.ly-ico {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--text-lo);
+  transition: color 0.12s ease;
+}
+.ly-chev {
+  width: 14px;
+  height: 14px;
+}
+
+/* Boton de solo icono (cepillo, carpeta, ✕...). El texto va en el tooltip. */
+.ly-iconbtn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    opacity 0.12s ease;
+}
+.ly-iconbtn .ly-ico {
+  width: 15px;
+  height: 15px;
+  color: inherit;
+}
+.ly-iconbtn:hover,
+.ly-iconbtn.is-on {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-hi);
+}
+.ly-iconbtn.is-danger:hover {
+  color: var(--accent-warm);
+}
+/* Deshabilitado se ve (atenuado), no desaparece: un hueco parece un fallo. */
+.ly-iconbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
+  color: var(--text-lo);
+}
+
+.ly-sep {
+  flex: none;
+  height: 1px;
+  margin: 5px 8px;
+  background: #23272c;
+}
+
+.ly-badge {
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #0a0a0b;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ly-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 6px 6px;
+}
+/* Barra de scroll fina: la nativa de Windows, con flechas, desentonaba. */
+.ly-list::-webkit-scrollbar {
+  width: 10px;
+}
+.ly-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ly-list::-webkit-scrollbar-thumb {
+  background: #2a2e34;
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.ly-list::-webkit-scrollbar-thumb:hover {
+  background-color: #3a3f47;
+}
+.ly-list::-webkit-scrollbar-button {
+  display: none;
+}
+
+.ly-empty {
+  padding: 30px 16px 36px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-lo);
+}
+
+/* Fila de lista: mismo resaltado para raton y teclado (data-active), el del
+   menu ☰ — fondo suave y filo dorado, no el anillo grueso. */
+.ly-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-left: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+.ly-row[data-active='true'] {
+  background: rgba(255, 255, 255, 0.045);
+  border-left-color: var(--gold);
+}
+.ly-row[data-active='true'] > .ly-ico {
+  color: var(--gold-bright);
+}
+/* Acciones de la fila: solo aparecen al pasar por ella (o con el teclado). */
+.ly-acts {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ly-row[data-active='true'] .ly-acts {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ly-panel {
+    animation: none;
+  }
+}

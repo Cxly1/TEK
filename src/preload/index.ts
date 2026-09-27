@@ -8,6 +8,8 @@ import {
   type FillAvailable,
   type FindResult,
   type MediaState,
+  type LayerContent,
+  type LayerEvent,
   type PasswordOffer,
   type PipState,
   type RecipeToastInfo,
@@ -188,6 +190,16 @@ const api: TekApi = {
     prev: () => ipcRenderer.invoke(IPC.mediaPrev),
     setExclusive: (on) => ipcRenderer.invoke(IPC.mediaSetExclusive, on),
     onState: (cb: (s: MediaState) => void) => on(IPC.mediaState, cb)
+  },
+  layer: {
+    open: (content) => ipcRenderer.invoke(IPC.layerOpen, content),
+    update: (content) => ipcRenderer.send(IPC.layerUpdate, content),
+    close: () => ipcRenderer.send(IPC.layerClose),
+    onEvent: (cb: (e: LayerEvent) => void) => on(IPC.layerEvent, cb),
+    current: () => ipcRenderer.invoke(IPC.layerCurrent),
+    onShow: (cb: (c: LayerContent | null) => void) => on(IPC.layerShow, cb),
+    pick: (id, keepOpen) => ipcRenderer.send(IPC.layerPick, id, keepOpen),
+    dismiss: () => ipcRenderer.send(IPC.layerDismiss)
   },
   onTabsState: (cb: (state: TabsState) => void) => {
     const listener = (_e: unknown, state: TabsState): void => cb(state)

@@ -1,0 +1,53 @@
+/* Descargas en la capa flotante (ver DownloadsPanel). Base en layer.css. */
+
+.ly-row.lyd-row {
+  min-height: 46px;
+  padding: 6px 6px 6px 10px;
+}
+.lyd-row.is-busy .ly-acts {
+  opacity: 1; /* cancelar siempre a mano mientras descarga */
+}
+.lyd-row.is-dead {
+  cursor: default;
+}
+.lyd-row.is-dead .lyd-name {
+  color: var(--text-lo);
+}
+
+.lyd-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lyd-name {
+  font-size: 13px;
+  color: var(--text-hi);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lyd-sub {
+  font-size: 11.5px;
+  color: var(--text-lo);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.lyd-prog {
+  display: block;
+  height: 3px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.lyd-prog i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gold);
+  transition: width 0.25s linear;
+}

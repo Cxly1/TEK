@@ -17,6 +17,7 @@ import {
   type ClearScope,
   type DevSettings,
   type FindOptions,
+  type LayerContent,
   type PwDecision,
   type Recipe,
   type SiteScript,
@@ -28,6 +29,7 @@ import {
   type Workspace
 } from '@shared/ipc'
 import { ViewManager } from './features/ViewManager'
+import { FloatingLayer } from './features/FloatingLayer'
 import { Brain } from './features/brain/Brain'
 import { Adblock } from './features/adblock/Adblock'
 import { Favicons } from './features/Favicons'
@@ -75,6 +77,8 @@ let arcade: Arcade | null = null
 let feedback: Feedback | null = null
 let updater: Updater | null = null
 let media: Media | null = null
+/** Capa flotante (menu ☰, Descargas, Historial) encima de la pagina. Vive con la ventana. */
+let floating: FloatingLayer | null = null
 
 /** ¿El host es un server local? (auto-DevTools solo aplica ahi). */
 function isLocalHost(host: string): boolean {
@@ -91,23 +95,28 @@ function sendToShell(channel: string, payload: unknown): void {
  * invocarlos. Los preload de las paginas tambien tienen ipcRenderer; aunque hoy
  * no llaman a estos canales, mejor que el main lo imponga.
  */
-function fromShell(e: Electron.IpcMainInvokeEvent): boolean {
+function fromShell(e: { sender: Electron.WebContents }): boolean {
   return mainWindow !== null && !mainWindow.isDestroyed() && e.sender === mainWindow.webContents
 }
 
 /**
- * Carga la UI de la barra del mini-player (Picture-in-Picture) en su vista nativa.
- * Reusa el bundle del renderer con `?surface=pip`: main.tsx monta la barra en vez
- * del shell. Misma fuente (dev server / file://) que la ventana principal.
+ * Carga una superficie secundaria de la UI en su propia vista nativa: la barra
+ * del mini-player (`pip`) o la capa flotante (`layer`: menu ☰, Descargas,
+ * Historial). Reusa el bundle del renderer con `?surface=...` (main.tsx decide
+ * que montar). Misma fuente (dev server / file://) que la ventana principal.
  */
-function loadPipChrome(view: WebContentsView): void {
+function loadSurface(view: WebContentsView, surface: 'pip' | 'layer'): void {
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    void view.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?surface=pip`)
+    void view.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?surface=${surface}`)
   } else {
     void view.webContents.loadFile(join(import.meta.dirname, '../renderer/index.html'), {
-      search: 'surface=pip'
+      search: `surface=${surface}`
     })
   }
+}
+
+function loadPipChrome(view: WebContentsView): void {
+  loadSurface(view, 'pip')
 }
 
 function createWindow(): void {
@@ -148,6 +157,13 @@ function createWindow(): void {
   views = new ViewManager(mainWindow, brain!, adblock!, favicons!, loadPipChrome)
   wireAutomation(views)
 
+  // Menu ☰, Descargas e Historial: su propia capa nativa, transparente, encima
+  // de la pagina (la pagina ya no se oculta para abrirlos). Ver FloatingLayer.
+  floating = new FloatingLayer(mainWindow, (v) => loadSurface(v, 'layer'))
+  floating.onEvent = (e) => sendToShell(IPC.layerEvent, e)
+  floating.onHidden = () => views?.refocus()
+  views.onRestack = () => floating?.raise() ?? false
+
   // Musica: Media necesita mapear webContents<->pestana, y ViewManager le avisa
   // cuando una pestana empieza a sonar (modo "una sola pestana a la vez").
   if (media) {
@@ -161,8 +177,15 @@ function createWindow(): void {
     views.onAudibleStart = (tabId) => media?.onAudible(tabId)
   }
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => {
+    mainWindow?.show()
+    // La capa flotante se carga con la ventana ya a la vista: no retrasa el
+    // arranque y el primer clic en ☰ ya la encuentra lista.
+    setTimeout(() => floating?.prepare(), 1200)
+  })
   mainWindow.on('closed', () => {
+    floating?.dispose()
+    floating = null
     views?.dispose()
     brain?.dispose()
     adblock?.dispose()
@@ -336,6 +359,25 @@ function registerIpc(): void {
   ipcMain.handle(IPC.pipMoveBy, (_e, dx: number, dy: number) => views?.pipMoveBy(dx, dy))
   ipcMain.handle(IPC.pipSnap, () => views?.pipSnap())
   ipcMain.handle(IPC.pipGetState, () => views?.pipState() ?? null)
+
+  // Capa flotante (menu ☰, Descargas, Historial). Abrir, repintar y cerrar es
+  // cosa del SHELL; elegir un item o descartar, solo de la propia capa.
+  ipcMain.handle(IPC.layerOpen, (e, content: LayerContent) => {
+    if (fromShell(e)) floating?.open(content)
+  })
+  ipcMain.on(IPC.layerUpdate, (e, content: LayerContent) => {
+    if (fromShell(e)) floating?.update(content)
+  })
+  ipcMain.on(IPC.layerClose, (e) => {
+    if (fromShell(e)) floating?.close(false)
+  })
+  ipcMain.handle(IPC.layerCurrent, (e) => (floating?.owns(e.sender) ? floating.current() : null))
+  ipcMain.on(IPC.layerPick, (e, id: unknown, keepOpen: unknown) => {
+    if (floating?.owns(e.sender) && typeof id === 'string') floating.pick(id, keepOpen === true)
+  })
+  ipcMain.on(IPC.layerDismiss, (e) => {
+    if (floating?.owns(e.sender)) floating.close(true)
+  })
 
   // Buscar en la pagina (Ctrl+F)
   ipcMain.handle(IPC.findStart, (_e, text: string, opts?: FindOptions) => views?.find(text, opts))
@@ -748,10 +790,15 @@ app.whenReady().then(async () => {
   registerIpc()
   createWindow()
 
-  // El gestor de descargas empuja su estado al renderer (toast + panel).
+  // El gestor de descargas empuja su estado al shell (toast + numerito del ☰) y
+  // a la capa flotante, donde vive el panel de Descargas. Sin lo segundo, el
+  // panel no se enteraba de nada hasta reabrirlo: limpiar con el cepillo o
+  // quitar una fila "no hacia nada" y la barra de progreso no se movia.
   const dl = downloads
   dl.onChange = (): void => {
-    mainWindow?.webContents.send(IPC.downloadsState, dl.list())
+    const list = dl.list()
+    mainWindow?.webContents.send(IPC.downloadsState, list)
+    floating?.send(IPC.downloadsState, list)
   }
 
   // Push de automatizacion hacia el renderer.

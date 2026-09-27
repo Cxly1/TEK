@@ -168,6 +168,17 @@ export const IPC = {
   mediaPrev: 'media:prev',
   mediaSetExclusive: 'media:setExclusive',
 
+  // Capa flotante (vista nativa transparente ENCIMA de la pagina): el menu ☰,
+  // Descargas e Historial. El shell la abre/actualiza/cierra; la capa pinta y
+  // devuelve lo elegido (o se descarta sola).
+  layerOpen: 'layer:open',
+  layerUpdate: 'layer:update',
+  layerClose: 'layer:close',
+  /** La capa, al montar, pide lo que haya que pintar (puede montar tarde). */
+  layerCurrent: 'layer:current',
+  layerPick: 'layer:pick',
+  layerDismiss: 'layer:dismiss',
+
   // Eventos main -> renderer
   tabsState: 'tabs:state',
   downloadsState: 'downloads:state',
@@ -190,7 +201,11 @@ export const IPC = {
   /** Estado de la actualizacion (hay version nueva, bajando, lista para reiniciar). */
   updateState: 'update:state',
   /** Estado de "ahora suena" (que pestana suena, con que metadatos). */
-  mediaState: 'media:state'
+  mediaState: 'media:state',
+  /** A la capa flotante: que pintar (null = nada; la capa queda oculta). */
+  layerShow: 'layer:show',
+  /** Al shell: que paso en la capa (se eligio algo del menu, o se cerro sola). */
+  layerEvent: 'layer:event'
 } as const
 
 /**
@@ -447,6 +462,8 @@ export interface DownloadEntry {
   paused: boolean
   startedAt: number
   finishedAt: number | null
+  /** Terminada, pero el archivo ya no esta en disco (lo borraste o lo moviste). */
+  missing?: boolean
 }
 
 // --- Historial -------------------------------------------------------------
@@ -773,6 +790,75 @@ export interface MediaState {
   exclusive: boolean
 }
 
+// --- Capa flotante: menu ☰, Descargas, Historial -------------------------
+
+/** Iconos del menu: juego Lucide, los mismos trazos que el resto de la barra. */
+export type MenuIcon =
+  | 'history'
+  | 'download'
+  | 'key'
+  | 'zap'
+  | 'sparkles'
+  | 'music'
+  | 'gamepad'
+  | 'route'
+  | 'refresh'
+  | 'more'
+
+export interface MenuItem {
+  id: string
+  icon: MenuIcon
+  label: string
+  /** Aclaracion corta: sale como tooltip al dejar el raton encima. */
+  hint?: string
+  /** Numerito dorado (descargas activas o terminadas sin ver). */
+  badge?: number
+  /** Es un interruptor y este es su valor. Elegirlo NO cierra el menu. */
+  toggle?: boolean
+  /** Punto dorado de "hay algo nuevo" (una version esperando). */
+  dot?: boolean
+  /** Abre esta subpagina del menu en vez de ejecutar nada. */
+  page?: string
+}
+
+export interface MenuPage {
+  id: string
+  /** Titulo de la cabecera "‹ volver" (solo las subpaginas). */
+  title?: string
+  /** Grupos de items; entre grupo y grupo va una linea fina. */
+  groups: MenuItem[][]
+}
+
+/** Rectangulo en px CSS de la ventana (el del boton del que cuelga un panel). */
+export interface LayerAnchor {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface MenuModel {
+  /** El menu cae debajo de este boton y alinea su borde derecho con el suyo. */
+  anchor: LayerAnchor
+  /** pages[0] es la raiz. */
+  pages: MenuPage[]
+}
+
+/**
+ * Lo que pinta la capa flotante, una cosa a la vez. Descargas e Historial se
+ * traen sus propios datos (window.tek.downloads / brain): el shell solo dice
+ * que abrir y donde.
+ */
+export type LayerContent =
+  | { kind: 'menu'; model: MenuModel }
+  | { kind: 'downloads'; anchor: LayerAnchor }
+  | { kind: 'history' }
+
+export type LayerKind = LayerContent['kind']
+
+/** Lo que el main le cuenta al shell de la capa. */
+export type LayerEvent = { type: 'pick'; id: string } | { type: 'closed' }
+
 // --- Buscar en pagina / comandos de UI -------------------------------------
 
 /** Resultado de "buscar en pagina". */
@@ -1051,6 +1137,28 @@ export interface TekApi {
     /** Activa/desactiva "una sola pestana sonando a la vez". Devuelve el estado. */
     setExclusive(on: boolean): Promise<MediaState>
     onState(cb: (s: MediaState) => void): () => void
+  }
+  /**
+   * Capa flotante: el menu ☰, Descargas e Historial se pintan en su PROPIA vista
+   * nativa, transparente y encima de la pagina, asi la pagina sigue viva detras
+   * (antes habia que ocultarla y todo se quedaba en negro). Las cuatro primeras
+   * las usa el shell; las demas, la propia capa.
+   */
+  layer: {
+    open(content: LayerContent): Promise<void>
+    /** Repinta lo abierto (cambio un interruptor, llego una descarga...). */
+    update(content: LayerContent): void
+    close(): void
+    /** Lo que paso en la capa. Devuelve funcion para desuscribir. */
+    onEvent(cb: (e: LayerEvent) => void): () => void
+    /** Capa: lo que hay que pintar ahora mismo (al montar). */
+    current(): Promise<LayerContent | null>
+    /** Capa: que pintar (null = nada). Devuelve funcion para desuscribir. */
+    onShow(cb: (c: LayerContent | null) => void): () => void
+    /** Capa: se eligio un item del menu. `keepOpen` para los interruptores. */
+    pick(id: string, keepOpen: boolean): void
+    /** Capa: clic fuera, Esc o un atajo — se cierra sin elegir nada. */
+    dismiss(): void
   }
   /** Suscribe al estado de pestanas. Devuelve una funcion para desuscribir. */
   onTabsState(cb: (state: TabsState) => void): () => void

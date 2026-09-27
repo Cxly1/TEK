@@ -81,6 +81,10 @@ function PipButton(): React.JSX.Element {
  *  sin ver (se limpia al abrir el panel de descargas). */
 function ToolsButton(): React.JSX.Element {
   const openToolsMenu = useTek((s) => s.openToolsMenu)
+  const closeToolsMenu = useTek((s) => s.closeToolsMenu)
+  const open = useTek((s) => s.toolsMenuOpen)
+  // Descargas tambien cuelga de este boton: mientras esta abierto, el ☰ sigue encendido.
+  const lit = useTek((s) => s.toolsMenuOpen || s.downloadsOpen)
   const activeDl = useTek((s) => s.downloads.filter((d) => d.state === 'progressing').length)
   const unseenDone = useTek((s) =>
     s.downloads.filter(
@@ -90,10 +94,16 @@ function ToolsButton(): React.JSX.Element {
   const badge = activeDl || unseenDone
   return (
     <button
-      className={`tb-tool no-drag ${activeDl ? 'is-busy' : ''}`}
+      className={`tb-tool no-drag ${activeDl ? 'is-busy' : ''} ${lit ? 'is-open' : ''}`}
       data-tour="tools"
-      title="Herramientas (historial, descargas, contraseñas, automatización…)"
-      onClick={openToolsMenu}
+      // El menu y Descargas caen bajo este boton (LayerController lo mide).
+      data-anchor="tools"
+      title="Herramientas (historial, descargas, contraseñas…)"
+      aria-haspopup="menu"
+      aria-expanded={open}
+      // Con el menu a la vista, este clic lo recoge la capa y lo cierra; aqui
+      // solo llega si la capa aun no habia montado.
+      onClick={() => (open ? closeToolsMenu() : openToolsMenu())}
     >
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
         <path
