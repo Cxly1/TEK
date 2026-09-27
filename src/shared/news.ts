@@ -32,12 +32,13 @@ export interface NewsEntry {
 export const NEWS: NewsEntry[] = [
   {
     version: '0.4.0',
-    date: '2026-09-04',
-    title: 'Cuando una página no carga',
+    date: '2026-09-27',
+    title: 'Menús que flotan y un arcade',
     items: [
-      'Si un sitio no abre, TEK te lo explica en español y te deja reintentar de un clic.',
-      'Y mientras vuelve la señal, tienes un arcade dentro: naves, marcianitos, potenciadores y récord.',
-      'También puedes jugar cuando quieras, desde el menú ☰.'
+      'El menú ☰, Descargas e Historial se abren encima de la página: ya no se queda todo en negro.',
+      'Historial más limpio: sin repetidas, con el icono de cada sitio y tus búsquedas a la vista.',
+      'Si un sitio no abre, TEK te lo explica y te deja reintentar. Y mientras vuelve la señal, un arcade.',
+      'Arreglos varios.'
     ]
   },
   {
