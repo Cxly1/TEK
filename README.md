@@ -152,12 +152,18 @@ src/
 Regla del proyecto: **ningún canal IPC con strings sueltos** — todos viven en
 `src/shared/ipc.ts` con su payload tipado.
 
-### DRM (Netflix y compañía)
+### DRM (Netflix, Spotify y compañía)
 
 TEK corre sobre [`castlabs/electron-releases`](https://github.com/castlabs/electron-releases),
-un fork de Electron con Widevine. Para que el vídeo protegido funcione en un build empaquetado
-hay que **firmar el paquete con VMP** (herramienta `castlabs-evs`, cuenta gratuita). Sin firmar,
-el navegador funciona igual pero el vídeo con DRM se queda en negro.
+un fork de Electron con Widevine. Widevine solo da licencias a un binario con **firma VMP de
+producción** (herramienta `castlabs-evs`, cuenta gratuita). El Electron de castlabs trae de
+fábrica una firma de *desarrollo*: con ella el navegador funciona, pero Netflix da error E100 y
+Spotify se salta canciones (la que llega a sonar se calla a los pocos segundos).
+
+- **`pnpm dist`** firma el instalador (hook `build/afterSign.cjs`).
+- **`pnpm install` y `pnpm dev`** firman `node_modules/electron/dist` solos
+  (`scripts/vmp-dev.mjs`) si tienes `castlabs-evs` con la sesión iniciada; si no, avisan y
+  siguen. Hace falta porque pnpm, al reinstalar, restaura la firma de desarrollo sin avisar.
 
 El techo es **Widevine L3 → 720p**. El 4K exige DRM por hardware (L1), que ningún navegador de
 terceros puede dar.
