@@ -31,6 +31,12 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    version: '0.4.1',
+    date: '2026-09-28',
+    title: 'Páginas que se leen bien',
+    items: ['Arreglado: algunas páginas se veían en negro y no se leía el texto.']
+  },
+  {
     version: '0.4.0',
     date: '2026-09-27',
     title: 'Menús que flotan y un arcade',

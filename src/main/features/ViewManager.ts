@@ -826,10 +826,15 @@ export class ViewManager {
     // Fondo OPACO (no transparente): mientras la pagina hace su primer paint, una
     // vista transparente dejaria ver el shell de detras (el lienzo "nueva pestana"
     // y la paleta a medio cerrar), que ademas pueden quedar congelados un instante
-    // al perder el foco. Con un fondo solido se ve el color de la app y luego la
-    // pagina — nunca el shell fantasma. (Era la causa de "la paleta no se quita
-    // hasta dar clic afuera": no era la paleta, era la vista transparente encima.)
-    view.setBackgroundColor('#060607')
+    // al perder el foco. Con un fondo solido nunca asoma el shell fantasma. (Era la
+    // causa de "la paleta no se quita hasta dar clic afuera": no era la paleta,
+    // era la vista transparente encima.)
+    // BLANCO y no el negro de la app: este color es tambien el LIENZO de la pagina,
+    // lo que se ve donde ella no pinta fondo. Muchos sitios (samsung.com, por
+    // ejemplo: html y body transparentes) dan por hecho el blanco de cualquier
+    // navegador y ponen texto oscuro encima; sobre el negro de TEK ese texto
+    // desaparecia. Los sitios con modo oscuro pintan su propio fondo y no cambian.
+    view.setBackgroundColor('#ffffff')
     const tab: Tab = {
       id: nextId(),
       view,
