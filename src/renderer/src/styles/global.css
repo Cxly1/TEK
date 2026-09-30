@@ -46,8 +46,8 @@ body {
   border-radius: inherit;
   background: radial-gradient(
     circle 120px at var(--x, 50%) var(--y, 50%),
-    rgba(244, 213, 138, 0.16),
-    rgba(244, 213, 138, 0.05) 38%,
+    rgba(var(--gold-bright-rgb), 0.16),
+    rgba(var(--gold-bright-rgb), 0.05) 38%,
     transparent 66%
   );
   opacity: 0;
@@ -66,10 +66,10 @@ body {
   pointer-events: none;
   background: repeating-linear-gradient(
     to bottom,
-    rgba(0, 0, 0, 0) 0px,
-    rgba(0, 0, 0, 0) 2px,
-    rgba(0, 0, 0, 0.16) 3px,
-    rgba(0, 0, 0, 0) 4px
+    rgba(var(--scan-rgb), 0) 0px,
+    rgba(var(--scan-rgb), 0) 2px,
+    rgba(var(--scan-rgb), calc(0.16 * var(--scan-k))) 3px,
+    rgba(var(--scan-rgb), 0) 4px
   );
   mix-blend-mode: multiply;
 }
@@ -92,7 +92,7 @@ body {
     box-shadow 0.14s ease;
 }
 .knav-item[data-active='true'] {
-  background: rgba(244, 213, 138, 0.1);
+  background: rgba(var(--gold-bright-rgb), 0.1);
   box-shadow:
     0 0 0 1.5px var(--gold),
     0 0 14px var(--gold-glow);

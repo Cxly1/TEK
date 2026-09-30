@@ -15,13 +15,84 @@
 import { armaHud, lineaBarrido } from './engine'
 import { BARRIDO_DUR, H, NAVE_Y, W, type Enemy, type World } from './types'
 import { LINEA_MUERTE, ranuraY } from './waves'
+import { isThemeName, type ThemeName } from '@shared/theme'
 
 type C2D = CanvasRenderingContext2D
 
-const FOSFORO = '#f2f3f5'
-const ORO = '#e3b341'
-const ROJO = '#ff4d3d'
-const AZUL = '#3da2ff'
+/**
+ * Los colores del tubo, uno por apariencia (ver shared/theme.ts). Noche son los
+ * de siempre. Dia es papel con tinta y oro; Borgoña, fosforo de perla con rosa.
+ * En Dia la aberracion cromatica va al reves (tinte `screen` + mezcla
+ * `multiply`): sumar luz sobre papel no se veria.
+ */
+interface Paleta {
+  fondo: string
+  fosforo: string
+  /** El destello de un impacto (mas contraste que el fosforo). */
+  claro: string
+  oro: string
+  rojo: string
+  azul: string
+  /** Trio r,g,b de los brillos (banda de interferencia, barrido, costura). */
+  brillo: string
+  /** Trio r,g,b del velo de las pantallas de titulo, pausa y fin. */
+  velo: string
+  rayas: [string, string]
+  vinieta: [string, string]
+  tinte: GlobalCompositeOperation
+  mezcla: GlobalCompositeOperation
+}
+const PALETAS: Record<ThemeName, Paleta> = {
+  noche: {
+    fondo: '#060607',
+    fosforo: '#f2f3f5',
+    claro: '#ffffff',
+    oro: '#e3b341',
+    rojo: '#ff4d3d',
+    azul: '#3da2ff',
+    brillo: '242,243,245',
+    velo: '6,6,7',
+    rayas: ['rgba(0,0,0,0.34)', 'rgba(0,0,0,0.16)'],
+    vinieta: ['rgba(0,0,0,0)', 'rgba(0,0,0,0.62)'],
+    tinte: 'multiply',
+    mezcla: 'screen'
+  },
+  dia: {
+    fondo: '#f6f5f1',
+    fosforo: '#1c1b19',
+    claro: '#000000',
+    oro: '#b8860b',
+    rojo: '#d23a2a',
+    azul: '#1f6fd1',
+    brillo: '28,27,25',
+    velo: '246,245,241',
+    rayas: ['rgba(90,70,30,0.1)', 'rgba(90,70,30,0.05)'],
+    vinieta: ['rgba(120,95,40,0)', 'rgba(120,95,40,0.26)'],
+    tinte: 'screen',
+    mezcla: 'multiply'
+  },
+  borgona: {
+    fondo: '#12070a',
+    fosforo: '#fbeef1',
+    claro: '#ffffff',
+    oro: '#f0a8b8',
+    rojo: '#ff4d3d',
+    azul: '#a9b4ff',
+    brillo: '251,238,241',
+    velo: '18,7,10',
+    rayas: ['rgba(0,0,0,0.34)', 'rgba(0,0,0,0.16)'],
+    vinieta: ['rgba(6,1,3,0)', 'rgba(6,1,3,0.62)'],
+    tinte: 'multiply',
+    mezcla: 'screen'
+  }
+}
+/** La paleta con la que se pinta. Cambia con el tema, incluso a media partida. */
+let P: Paleta = PALETAS.noche
+/** La del tema actual: el preload la marca en <html data-theme>. */
+function paletaDelTema(): Paleta {
+  const t = document.documentElement.dataset.theme
+  return isThemeName(t) ? PALETAS[t] : PALETAS.noche
+}
 const MONO = "'JetBrains Mono', 'Cascadia Code', Consolas, ui-monospace, monospace"
 
 /** Separa los millares con espacio fino: "1 204 500". Sin locales ni sorpresas. */
@@ -60,7 +131,7 @@ function texto(
   x: number,
   y: number,
   tam: number,
-  color = FOSFORO,
+  color = P.fosforo,
   alin: CanvasTextAlign = 'left',
   peso = 500,
   alpha = 1
@@ -109,22 +180,31 @@ export class Pintor {
       })
     }
 
-    // Patron de lineas de barrido: 4px de alto, una oscura. Se cachea una vez.
+    this.prep()
+  }
+
+  /** Paleta con la que se hicieron las rayas y la viñeta (se rehacen al cambiar). */
+  private hecho: Paleta | null = null
+
+  /** Patron de lineas de barrido (4px de alto, una oscura) y viñeta, cacheados por paleta. */
+  private prep(): void {
+    this.hecho = P
+    const tc = this.tc
     const p = document.createElement('canvas')
     p.width = 1
     p.height = 4
     const pc = p.getContext('2d')
     if (pc) {
-      pc.fillStyle = 'rgba(0,0,0,0.34)'
+      pc.fillStyle = P.rayas[0]
       pc.fillRect(0, 2, 1, 1)
-      pc.fillStyle = 'rgba(0,0,0,0.16)'
+      pc.fillStyle = P.rayas[1]
       pc.fillRect(0, 3, 1, 1)
       this.rayas = tc.createPattern(p, 'repeat')
     }
 
     const g = tc.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.78)
-    g.addColorStop(0, 'rgba(0,0,0,0)')
-    g.addColorStop(1, 'rgba(0,0,0,0.62)')
+    g.addColorStop(0, P.vinieta[0])
+    g.addColorStop(1, P.vinieta[1])
     this.vinieta = g
   }
 
@@ -147,11 +227,11 @@ export class Pintor {
 
   private fondo(w: World, tr: number): void {
     const ctx = this.tc
-    ctx.fillStyle = '#060607'
+    ctx.fillStyle = P.fondo
     ctx.fillRect(0, 0, W, H)
 
     // Estatica: puntos de fosforo que caen. Es el "ruido de portadora" del tubo.
-    ctx.fillStyle = FOSFORO
+    ctx.fillStyle = P.fosforo
     for (const d of this.polvo) {
       const y = (d.y + tr * d.v) % H
       ctx.globalAlpha = 0.05 + (d.r > 1 ? 0.06 : 0)
@@ -162,9 +242,9 @@ export class Pintor {
     // Banda de interferencia: una franja mas clara que baja sin parar.
     const by = ((tr * 46) % (H + 160)) - 80
     const g = ctx.createLinearGradient(0, by, 0, by + 70)
-    g.addColorStop(0, 'rgba(242,243,245,0)')
-    g.addColorStop(0.5, 'rgba(242,243,245,0.045)')
-    g.addColorStop(1, 'rgba(242,243,245,0)')
+    g.addColorStop(0, `rgba(${P.brillo},0)`)
+    g.addColorStop(0.5, `rgba(${P.brillo},0.045)`)
+    g.addColorStop(1, `rgba(${P.brillo},0)`)
     ctx.fillStyle = g
     ctx.fillRect(0, by, W, 70)
 
@@ -173,7 +253,7 @@ export class Pintor {
     ctx.setLineDash([5, 9])
     ctx.moveTo(0, LINEA_MUERTE)
     ctx.lineTo(W, LINEA_MUERTE)
-    ctx.strokeStyle = ROJO
+    ctx.strokeStyle = P.rojo
     ctx.globalAlpha = 0.16 + Math.max(0, (w.formY + ranuraY(0) - LINEA_MUERTE + 150) / 150) * 0.2
     ctx.lineWidth = 1
     ctx.stroke()
@@ -201,7 +281,7 @@ export class Pintor {
     ctx.lineTo(x - 7, y + 9)
     ctx.moveTo(x + 11, y - 1)
     ctx.lineTo(x + 7, y + 9)
-    fosforo(ctx, FOSFORO, 2)
+    fosforo(ctx, P.fosforo, 2)
 
     // Llama del propulsor: parpadea con el tiempo, no con los frames.
     const llama = 5 + Math.abs(Math.sin(tr * 32)) * 5
@@ -209,20 +289,20 @@ export class Pintor {
     ctx.moveTo(x - 2.5, y + 9)
     ctx.lineTo(x, y + 9 + llama)
     ctx.lineTo(x + 2.5, y + 9)
-    fosforo(ctx, AZUL, 1.4, 0.85)
+    fosforo(ctx, P.azul, 1.4, 0.85)
 
     if (n.escudo > 0) {
       ctx.beginPath()
       ctx.arc(x, y - 1, 19, 0, Math.PI * 2)
       ctx.setLineDash([3, 5])
       ctx.lineDashOffset = -tr * 22
-      fosforo(ctx, ORO, 1.4, n.escudo > 1 ? 0.9 : 0.55)
+      fosforo(ctx, P.oro, 1.4, n.escudo > 1 ? 0.9 : 0.55)
       ctx.setLineDash([])
     }
     if (n.iman > 0) {
       ctx.beginPath()
       ctx.arc(x, y - 1, 26 + Math.sin(tr * 6) * 3, 0, Math.PI * 2)
-      fosforo(ctx, ORO, 0.8, 0.18)
+      fosforo(ctx, P.oro, 0.8, 0.18)
     }
   }
 
@@ -231,7 +311,7 @@ export class Pintor {
     const x = e.x
     const y = e.y
     const claro = e.flash > 0
-    const col = claro ? '#ffffff' : FOSFORO
+    const col = claro ? P.claro : P.fosforo
     const gr = claro ? 2.6 : 1.5
 
     switch (e.kind) {
@@ -313,7 +393,7 @@ export class Pintor {
         // El escudo giratorio: por donde apunta, rebota. El hueco es la entrada.
         ctx.beginPath()
         ctx.arc(x, y, 15, e.escudo - 0.95, e.escudo + 0.95)
-        fosforo(ctx, claro ? '#ffffff' : AZUL, 3)
+        fosforo(ctx, claro ? P.claro : P.azul, 3)
         break
       }
 
@@ -342,11 +422,11 @@ export class Pintor {
         // Nucleo: cuando se abre es el punto debil (x3). Se ve de lejos.
         ctx.beginPath()
         ctx.arc(x, y, 9 + abierto * 13, 0, Math.PI * 2)
-        fosforo(ctx, abierto > 0.35 ? ROJO : col, 2.2, 0.5 + abierto * 0.5)
+        fosforo(ctx, abierto > 0.35 ? P.rojo : col, 2.2, 0.5 + abierto * 0.5)
         if (abierto > 0.35) {
           ctx.beginPath()
           ctx.arc(x, y, 4 + abierto * 6, 0, Math.PI * 2)
-          relleno(ctx, ROJO, abierto)
+          relleno(ctx, P.rojo, abierto)
         }
 
         // Barra de vida del jefe, anclada arriba del tubo.
@@ -356,7 +436,7 @@ export class Pintor {
         fosforo(ctx, col, 1, 0.3)
         ctx.beginPath()
         ctx.rect(60, 52, (W - 120) * p, 4)
-        relleno(ctx, p < 0.28 ? ROJO : col, 0.9)
+        relleno(ctx, p < 0.28 ? P.rojo : col, 0.9)
         break
       }
     }
@@ -368,7 +448,7 @@ export class Pintor {
       ctx.beginPath()
       ctx.moveTo(b.x, b.y)
       ctx.lineTo(b.x - b.vx * 0.012, b.y + b.largo)
-      fosforo(ctx, b.perfora ? ORO : FOSFORO, b.perfora ? 4 : 1.8)
+      fosforo(ctx, b.perfora ? P.oro : P.fosforo, b.perfora ? 4 : 1.8)
     }
     for (const b of w.balasEnemigas) {
       ctx.beginPath()
@@ -378,10 +458,10 @@ export class Pintor {
         ctx.lineTo(b.x + 4, b.y + 4)
         ctx.moveTo(b.x + 4, b.y - 4)
         ctx.lineTo(b.x - 4, b.y + 4)
-        fosforo(ctx, AZUL, 2)
+        fosforo(ctx, P.azul, 2)
       } else {
         ctx.arc(b.x, b.y, 3.4, 0, Math.PI * 2)
-        fosforo(ctx, ROJO, 1.6)
+        fosforo(ctx, P.rojo, 1.6)
       }
     }
   }
@@ -392,7 +472,7 @@ export class Pintor {
       const pulso = 0.72 + Math.sin(p.t * 7) * 0.28
       ctx.beginPath()
       ctx.rect(p.x - 9, p.y - 9, 18, 18)
-      fosforo(ctx, ORO, 1.5, pulso)
+      fosforo(ctx, P.oro, 1.5, pulso)
 
       // Iconos dibujados a mano: nada de glifos unicode, que dependen de la
       // fuente del sistema y en un canvas pueden salir como un cuadrado.
@@ -445,13 +525,13 @@ export class Pintor {
           ctx.lineTo(p.x + 5, p.y)
           break
       }
-      fosforo(ctx, ORO, 1.6, pulso)
+      fosforo(ctx, P.oro, 1.6, pulso)
     }
   }
 
   private chispas(w: World): void {
     const ctx = this.tc
-    ctx.fillStyle = FOSFORO
+    ctx.fillStyle = P.fosforo
     for (const c of w.chispas) {
       // El fosforo no se apaga de golpe: cae con el cuadrado de lo que le queda.
       const k = c.vida / c.vidaMax
@@ -469,19 +549,19 @@ export class Pintor {
 
     // El retrazado: una linea cegadora y la estela caliente que deja detras.
     const g = ctx.createLinearGradient(0, y, 0, y + 90)
-    g.addColorStop(0, 'rgba(242,243,245,0.5)')
-    g.addColorStop(1, 'rgba(242,243,245,0)')
+    g.addColorStop(0, `rgba(${P.brillo},0.5)`)
+    g.addColorStop(1, `rgba(${P.brillo},0)`)
     ctx.fillStyle = g
     ctx.fillRect(0, y, W, 90)
 
     ctx.beginPath()
     ctx.moveTo(0, y)
     ctx.lineTo(W, y)
-    fosforo(ctx, '#ffffff', 3.5)
+    fosforo(ctx, P.claro, 3.5)
     ctx.beginPath()
     ctx.moveTo(0, y + 3)
     ctx.lineTo(W, y + 3)
-    fosforo(ctx, ORO, 1.5, 0.5 + k * 0.5)
+    fosforo(ctx, P.oro, 1.5, 0.5 + k * 0.5)
   }
 
   // --- HUD ------------------------------------------------------------------
@@ -489,14 +569,14 @@ export class Pintor {
   private hud(w: World, tr: number): void {
     const ctx = this.tc
 
-    texto(ctx, num(w.puntos), 14, 30, 21, FOSFORO, 'left', 600)
+    texto(ctx, num(w.puntos), 14, 30, 21, P.fosforo, 'left', 600)
     if (w.record > 0) {
-      texto(ctx, `RÉCORD ${num(w.record)}`, 14, 43, 9, FOSFORO, 'left', 500, 0.42)
+      texto(ctx, `RÉCORD ${num(w.record)}`, 14, 43, 9, P.fosforo, 'left', 500, 0.42)
     }
-    texto(ctx, `OLEADA ${w.oleada}`, W - 14, 30, 12, FOSFORO, 'right', 600, 0.8)
+    texto(ctx, `OLEADA ${w.oleada}`, W - 14, 30, 12, P.fosforo, 'right', 600, 0.8)
     if (w.combo > 0) {
       const c = [1, 2, 4, 8][w.combo]
-      texto(ctx, `x${c}`, W - 14, 46, 14, ORO, 'right', 700, 0.95)
+      texto(ctx, `x${c}`, W - 14, 46, 14, P.oro, 'right', 700, 0.95)
     }
 
     // Vidas: el mismo glifo de la nave, para que se lea sin explicaciones.
@@ -508,10 +588,10 @@ export class Pintor {
       ctx.lineTo(x, y + 4)
       ctx.moveTo(x - 5, y)
       ctx.lineTo(x + 5, y)
-      fosforo(ctx, FOSFORO, 1.4, 0.85)
+      fosforo(ctx, P.fosforo, 1.4, 0.85)
     }
 
-    texto(ctx, armaHud(w), W - 14, H - 12, 10, FOSFORO, 'right', 600, 0.72)
+    texto(ctx, armaHud(w), W - 14, H - 12, 10, P.fosforo, 'right', 600, 0.72)
 
     // Carga del BARRIDO. Llena = late y se anuncia sola.
     const bw = 108
@@ -520,17 +600,17 @@ export class Pintor {
     const lleno = w.nave.carga >= 1
     ctx.beginPath()
     ctx.rect(bx, by, bw, 5)
-    fosforo(ctx, FOSFORO, 1, 0.25)
+    fosforo(ctx, P.fosforo, 1, 0.25)
     ctx.beginPath()
     ctx.rect(bx, by, bw * w.nave.carga, 5)
-    relleno(ctx, lleno ? ORO : FOSFORO, lleno ? 0.75 + Math.sin(tr * 9) * 0.25 : 0.6)
+    relleno(ctx, lleno ? P.oro : P.fosforo, lleno ? 0.75 + Math.sin(tr * 9) * 0.25 : 0.6)
     texto(
       ctx,
       lleno ? 'MAYÚS · BARRIDO' : 'BARRIDO',
       W / 2,
       by - 4,
       8,
-      lleno ? ORO : FOSFORO,
+      lleno ? P.oro : P.fosforo,
       'center',
       600,
       lleno ? 0.95 : 0.35
@@ -539,20 +619,20 @@ export class Pintor {
     // Cartel efimero: entra y sale con su propio desvanecido.
     if (w.cartelT > 0) {
       const a = Math.min(1, w.cartelT * 2.6)
-      texto(ctx, w.cartel, W / 2, H * 0.42, 20, FOSFORO, 'center', 700, a * 0.92)
+      texto(ctx, w.cartel, W / 2, H * 0.42, 20, P.fosforo, 'center', 700, a * 0.92)
     }
   }
 
   private velo(alpha = 0.78): void {
-    this.tc.fillStyle = `rgba(6,6,7,${alpha})`
+    this.tc.fillStyle = `rgba(${P.velo},${alpha})`
     this.tc.fillRect(0, 0, W, H)
   }
 
   private titulo(w: World, tr: number): void {
     const ctx = this.tc
     this.velo(0.72)
-    texto(ctx, 'INTERFERENCIA', W / 2, 150, 27, FOSFORO, 'center', 700)
-    texto(ctx, 'la señal se fue. algo baja por el tubo.', W / 2, 173, 10, FOSFORO, 'center', 400, 0.55)
+    texto(ctx, 'INTERFERENCIA', W / 2, 150, 27, P.fosforo, 'center', 700)
+    texto(ctx, 'la señal se fue. algo baja por el tubo.', W / 2, 173, 10, P.fosforo, 'center', 400, 0.55)
 
     const filas: [string, string][] = [
       ['← →  /  ratón', 'mover'],
@@ -563,47 +643,47 @@ export class Pintor {
     ]
     filas.forEach(([k, v], i) => {
       const y = 260 + i * 26
-      texto(ctx, k, W / 2 - 12, y, 11, FOSFORO, 'right', 600, 0.9)
-      texto(ctx, v, W / 2 + 12, y, 11, FOSFORO, 'left', 400, 0.5)
+      texto(ctx, k, W / 2 - 12, y, 11, P.fosforo, 'right', 600, 0.9)
+      texto(ctx, v, W / 2 + 12, y, 11, P.fosforo, 'left', 400, 0.5)
     })
 
     const parpadeo = 0.35 + Math.abs(Math.sin(tr * 3.2)) * 0.65
-    texto(ctx, 'PULSA PARA EMPEZAR', W / 2, 470, 14, ORO, 'center', 700, parpadeo)
+    texto(ctx, 'PULSA PARA EMPEZAR', W / 2, 470, 14, P.oro, 'center', 700, parpadeo)
     if (w.record > 0) {
-      texto(ctx, `RÉCORD  ${num(w.record)}`, W / 2, 520, 11, FOSFORO, 'center', 500, 0.5)
+      texto(ctx, `RÉCORD  ${num(w.record)}`, W / 2, 520, 11, P.fosforo, 'center', 500, 0.5)
     }
   }
 
   private pausa(): void {
     const ctx = this.tc
     this.velo(0.7)
-    texto(ctx, 'PAUSA', W / 2, H / 2 - 6, 26, FOSFORO, 'center', 700)
-    texto(ctx, 'P continuar   ·   Esc salir', W / 2, H / 2 + 22, 11, FOSFORO, 'center', 400, 0.55)
+    texto(ctx, 'PAUSA', W / 2, H / 2 - 6, 26, P.fosforo, 'center', 700)
+    texto(ctx, 'P continuar   ·   Esc salir', W / 2, H / 2 + 22, 11, P.fosforo, 'center', 400, 0.55)
   }
 
   private fin(w: World, tr: number): void {
     const ctx = this.tc
     this.velo(0.82)
-    texto(ctx, 'SEÑAL PERDIDA', W / 2, H / 2 - 78, 24, ROJO, 'center', 700)
-    texto(ctx, num(w.puntos), W / 2, H / 2 - 26, 40, FOSFORO, 'center', 700)
+    texto(ctx, 'SEÑAL PERDIDA', W / 2, H / 2 - 78, 24, P.rojo, 'center', 700)
+    texto(ctx, num(w.puntos), W / 2, H / 2 - 26, 40, P.fosforo, 'center', 700)
     texto(
       ctx,
       `oleada ${w.oleada}   ·   ${w.bajas} ${w.bajas === 1 ? 'nave' : 'naves'}`,
       W / 2,
       H / 2 + 2,
       11,
-      FOSFORO,
+      P.fosforo,
       'center',
       400,
       0.55
     )
     if (w.puntos > w.record) {
       const p = 0.5 + Math.abs(Math.sin(tr * 4)) * 0.5
-      texto(ctx, '★  RÉCORD NUEVO  ★', W / 2, H / 2 + 38, 14, ORO, 'center', 700, p)
+      texto(ctx, '★  RÉCORD NUEVO  ★', W / 2, H / 2 + 38, 14, P.oro, 'center', 700, p)
     } else if (w.record > 0) {
-      texto(ctx, `récord ${num(w.record)}`, W / 2, H / 2 + 38, 11, FOSFORO, 'center', 400, 0.4)
+      texto(ctx, `récord ${num(w.record)}`, W / 2, H / 2 + 38, 11, P.fosforo, 'center', 400, 0.4)
     }
-    texto(ctx, 'R otra partida   ·   Esc salir', W / 2, H / 2 + 92, 12, FOSFORO, 'center', 500, 0.72)
+    texto(ctx, 'R otra partida   ·   Esc salir', W / 2, H / 2 + 92, 12, P.fosforo, 'center', 500, 0.72)
   }
 
   // --- Composicion ----------------------------------------------------------
@@ -620,7 +700,7 @@ export class Pintor {
     c.globalCompositeOperation = 'source-over'
     c.clearRect(0, 0, W, H)
     c.drawImage(this.tubo, 0, 0)
-    c.globalCompositeOperation = 'multiply'
+    c.globalCompositeOperation = P.tinte
     c.fillStyle = color
     c.fillRect(0, 0, W, H)
     c.globalCompositeOperation = 'source-over'
@@ -633,7 +713,7 @@ export class Pintor {
     const ch = this.vista.height
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.globalCompositeOperation = 'source-over'
-    ctx.fillStyle = '#060607'
+    ctx.fillStyle = P.fondo
     ctx.fillRect(0, 0, cw, ch)
 
     // Sacudida: en pixeles del tubo, escalados al lienzo visible.
@@ -666,15 +746,15 @@ export class Pintor {
     // Solo cuando hace falta (impactos, jefe, barrido): es lo unico caro de aqui.
     if (w.aberr > 0.02) {
       const d = w.aberr * 3.2 * k
-      ctx.globalCompositeOperation = 'screen'
-      pintarTubo(this.tenir(ROJO), sx - d, sy + off, w.aberr * 0.75)
-      pintarTubo(this.tenir(AZUL), sx + d, sy + off, w.aberr * 0.75)
+      ctx.globalCompositeOperation = P.mezcla
+      pintarTubo(this.tenir(P.rojo), sx - d, sy + off, w.aberr * 0.75)
+      pintarTubo(this.tenir(P.azul), sx + d, sy + off, w.aberr * 0.75)
       ctx.globalCompositeOperation = 'source-over'
     }
 
     if (off > 0) {
       // Costura del desenganche: la linea brillante del retorno.
-      ctx.fillStyle = 'rgba(242,243,245,0.22)'
+      ctx.fillStyle = `rgba(${P.brillo},0.22)`
       ctx.fillRect(0, off - 2 * k, cw, 3 * k)
     }
   }
@@ -686,6 +766,8 @@ export class Pintor {
    * parpadeo, sin estatica, sin nada.
    */
   pintar(w: World, tr: number): void {
+    P = paletaDelTema()
+    if (this.hecho !== P) this.prep()
     const ctx = this.tc
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.lineCap = 'round'

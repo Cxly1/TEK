@@ -86,7 +86,10 @@ export function Arcade(): React.JSX.Element {
     mudoRef.current = acciones.alternarMudo
 
     const ajustar = (): void => {
-      pintor.redimensionar(caja.clientWidth, caja.clientHeight, window.devicePixelRatio || 1)
+      // clientWidth/Height incluyen el padding de .arc-caja (10 + 10) y el tubo
+      // lleva borde (1 + 1): sin restarlos, el tubo tocaba las lineas de la
+      // cabecera y del pie.
+      pintor.redimensionar(caja.clientWidth - 22, caja.clientHeight - 22, window.devicePixelRatio || 1)
       pintor.pintar(mundo, performance.now() / 1000)
     }
     ajustar()

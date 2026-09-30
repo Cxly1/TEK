@@ -4,7 +4,7 @@
   z-index: 900;
   display: grid;
   place-items: center;
-  background: radial-gradient(70% 60% at 50% 45%, #0a0b0d 0%, var(--bg-void) 75%);
+  background: radial-gradient(70% 60% at 50% 45%, var(--glow-genesis) 0%, var(--bg-void) 75%);
 }
 
 .resume-card {
@@ -18,7 +18,7 @@
   background: var(--bg-elevated);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 28px 90px rgba(var(--shade-rgb), calc(0.6 * var(--shade-k)));
 }
 .resume-mark {
   font-size: 32px;
@@ -67,13 +67,13 @@
     box-shadow 0.16s ease;
 }
 .resume-yes {
-  border: 1px solid rgba(244, 213, 138, 0.5);
-  background: rgba(227, 179, 65, 0.08);
+  border: 1px solid rgba(var(--gold-bright-rgb), 0.5);
+  background: rgba(var(--gold-rgb), 0.08);
   color: var(--gold-bright);
 }
 .resume-yes:hover {
   border-color: var(--gold-bright);
-  background: rgba(227, 179, 65, 0.16);
+  background: rgba(var(--gold-rgb), 0.16);
   box-shadow: 0 0 0 3px var(--gold-glow);
 }
 .resume-no {
@@ -82,6 +82,6 @@
   color: var(--text-lo);
 }
 .resume-no:hover {
-  border-color: #3a4046;
+  border-color: var(--line-hover-2);
   color: var(--text-hi);
 }

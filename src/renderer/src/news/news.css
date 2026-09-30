@@ -8,7 +8,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(4, 4, 6, 0.62);
+  background: rgba(var(--scrim-rgb), calc(0.62 * var(--scrim-k)));
   backdrop-filter: blur(6px);
 }
 .news-panel {
@@ -16,10 +16,10 @@
   max-height: 84vh;
   display: flex;
   flex-direction: column;
-  border: 1px solid #23272d;
+  border: 1px solid var(--card-line);
   border-radius: 18px;
   background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 30px 90px rgba(var(--shade-rgb), calc(0.6 * var(--shade-k)));
   overflow: hidden;
 }
 .news-panel.is-narrow {
@@ -51,7 +51,7 @@
 }
 .news-x:hover {
   color: var(--text-hi);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.05);
 }
 
 .news-body {
@@ -67,13 +67,13 @@
   background: transparent;
 }
 .news-body::-webkit-scrollbar-thumb {
-  background: #24282e;
+  background: var(--news-scroll);
   border: 2px solid transparent;
   background-clip: padding-box;
   border-radius: 999px;
 }
 .news-body::-webkit-scrollbar-thumb:hover {
-  background: #333941;
+  background: var(--news-scroll-hover);
   background-clip: padding-box;
 }
 
@@ -135,7 +135,7 @@
   width: 9px;
   height: 9px;
   margin-top: 7px;
-  border: 1px solid #2b2f35;
+  border: 1px solid var(--node-line);
   border-radius: 999px;
 }
 /* El UNICO oro del panel, y solo si hay algo sin ver. Sigue siendo halo, nunca
@@ -143,7 +143,7 @@
 .news-ver.is-new .news-node {
   border: 1.5px solid var(--gold);
   box-shadow:
-    0 0 0 4px rgba(227, 179, 65, 0.09),
+    0 0 0 4px rgba(var(--gold-rgb), 0.09),
     0 0 12px var(--gold-glow);
 }
 
@@ -155,11 +155,11 @@
 .news-num {
   font-family: var(--font-mono, monospace);
   font-size: 11.5px;
-  color: #7f858c;
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 .news-ver.is-current .news-num {
-  color: #a7adb4;
+  color: var(--text-mid);
 }
 .news-tag {
   font-size: 9.5px;
@@ -171,7 +171,7 @@
   margin-left: auto;
   font-family: var(--font-mono, monospace);
   font-size: 10.5px;
-  color: #5c626b;
+  color: var(--text-4);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -180,7 +180,7 @@
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: #9ba0a6;
+  color: var(--text-mid-3);
 }
 .news-ver.is-current .news-ver-title,
 .news-ver.is-pending .news-ver-title {
@@ -202,7 +202,7 @@
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: #d6d8dc;
+  color: var(--text-2);
 }
 .news-items {
   margin: 0;
@@ -215,7 +215,7 @@
 .news-items li {
   font-size: 13px;
   line-height: 1.6;
-  color: #7c8188;
+  color: var(--text-3b);
 }
 /* Las versiones viejas quedan un paso atras, sin desaparecer. */
 .news-ver.is-current .news-items li {
@@ -248,7 +248,7 @@
 }
 .news-report:hover {
   color: var(--text-hi);
-  border-color: #3a3f47;
+  border-color: var(--line-hover);
 }
 
 /* --- Reportar un fallo ---------------------------------------------------- */
@@ -260,14 +260,14 @@
   margin: 14px 0 6px;
 }
 .fb-opt {
-  color: #5c626b;
+  color: var(--text-4);
 }
 .fb-text,
 .fb-input {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--tint-rgb), 0.02);
   color: var(--text-hi);
   font-family: var(--font-ui);
   font-size: 13px;
@@ -282,13 +282,13 @@
 }
 .fb-text:focus,
 .fb-input:focus {
-  border-color: #3a3f47;
+  border-color: var(--line-hover);
 }
 .fb-count {
   display: block;
   text-align: right;
   font-size: 10px;
-  color: #5c626b;
+  color: var(--text-4);
   margin-top: 4px;
 }
 
@@ -339,8 +339,8 @@
    unicas acciones de peso de estos paneles, y deben verse igual. */
 .fb-send,
 .news-cta {
-  border: 1px solid rgba(244, 213, 138, 0.5);
-  background: rgba(227, 179, 65, 0.08);
+  border: 1px solid rgba(var(--gold-bright-rgb), 0.5);
+  background: rgba(var(--gold-rgb), 0.08);
   border-radius: 9px;
   color: var(--gold-bright);
   font-family: var(--font-ui);
@@ -354,7 +354,7 @@
 .fb-send:hover:not(:disabled),
 .news-cta:hover:not(:disabled) {
   border-color: var(--gold-bright);
-  background: rgba(227, 179, 65, 0.16);
+  background: rgba(var(--gold-rgb), 0.16);
   box-shadow: 0 0 0 3px var(--gold-glow);
 }
 /* Deshabilitado se VE (atenuado), nunca desaparece. */
@@ -378,7 +378,7 @@
   display: grid;
   place-items: center;
   border-radius: 999px;
-  border: 1px solid rgba(217, 180, 91, 0.45);
+  border: 1px solid var(--gold-soft);
   color: var(--gold);
   font-size: 18px;
 }

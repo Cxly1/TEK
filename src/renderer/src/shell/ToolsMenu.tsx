@@ -1,4 +1,5 @@
 import type { LayerAnchor, MenuItem, MenuModel } from '@shared/ipc'
+import { THEMES, isThemeName, type ThemeName } from '@shared/theme'
 import { useTek } from '@/store'
 
 /**
@@ -10,7 +11,7 @@ import { useTek } from '@/store'
  */
 export function buildToolsModel(
   anchor: LayerAnchor,
-  s: { pending: string; exclusive: boolean; dlBadge: number }
+  s: { pending: string; exclusive: boolean; dlBadge: number; theme: ThemeName }
 ): MenuModel {
   const daily: MenuItem[] = [
     { id: 'history', icon: 'history', label: 'Historial', hint: 'Lo que has visitado' },
@@ -44,6 +45,22 @@ export function buildToolsModel(
     },
     { id: 'tour', icon: 'route', label: 'Repetir tutorial', hint: 'El paseo guiado · y tu nombre' }
   ]
+  // Apariencia: arriba de "Más opciones", sola en su grupo. Elegir no cierra el
+  // menu: el cambio se ve al momento, menu incluido.
+  const look: MenuItem = {
+    id: 'theme',
+    icon: 'theme',
+    label: 'Apariencia',
+    hint: 'Noche, Día o Borgoña',
+    choice: {
+      value: s.theme,
+      options: [
+        { id: 'noche', icon: 'moon', label: THEMES.noche.label },
+        { id: 'dia', icon: 'sun', label: THEMES.dia.label },
+        { id: 'borgona', icon: 'spark', label: THEMES.borgona.label }
+      ]
+    }
+  }
   if (!s.pending) {
     extras.push({
       id: 'update',
@@ -63,6 +80,7 @@ export function buildToolsModel(
         id: 'more',
         title: 'Más opciones',
         groups: [
+          [look],
           [
             {
               id: 'auto',
@@ -91,6 +109,12 @@ export function buildToolsModel(
 /** Ejecuta lo elegido en el menu. Todo menos el interruptor cierra el menu. */
 export function runToolsPick(id: string): void {
   const st = useTek.getState()
+  if (id.startsWith('theme:')) {
+    // Selector en sitio, como el interruptor: el menu sigue abierto.
+    const theme = id.slice('theme:'.length)
+    if (isThemeName(theme)) void window.tek.theme.set(theme)
+    return
+  }
   if (id === 'audio1') {
     // Interruptor en sitio: el menu sigue abierto y se repinta con el estado nuevo.
     void window.tek.media.setExclusive(!st.media.exclusive).then(st.setMedia)

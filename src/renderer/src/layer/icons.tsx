@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { MenuIcon } from '@shared/ipc'
 
 /** Iconos de los paneles que no salen en el menu ☰. */
@@ -14,6 +15,10 @@ type PanelIcon =
   | 'brush'
 
 export type GlyphName = MenuIcon | PanelIcon
+
+/** Destello de cuatro puntas: el icono de Borgoña. */
+const SPARK =
+  'M12 3l1.9 5.6c.2.6.6 1 1.2 1.2L21 12l-5.9 1.9c-.6.2-1 .6-1.2 1.2L12 21l-1.9-5.9c-.2-.6-.6-1-1.2-1.2L3 12l5.9-1.9c.6-.2 1-.6 1.2-1.2Z'
 
 const FILE_BODY = <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
 const FILE_FOLD = <path d="M14 2v4a2 2 0 0 0 2 2h4" />
@@ -94,6 +99,23 @@ const SHAPES: Record<GlyphName, React.JSX.Element> = {
       <circle cx="5" cy="12" r="1" />
     </>
   ),
+  moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="m4.93 4.93 1.41 1.41" />
+      <path d="m17.66 17.66 1.41 1.41" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="m6.34 17.66-1.41 1.41" />
+      <path d="m19.07 4.93-1.41 1.41" />
+    </>
+  ),
+  spark: <path d={SPARK} />,
+  // Solo por completar el juego: la fila de Apariencia pinta ThemeGlyph.
+  theme: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
   file: (
     <>
       {FILE_BODY}
@@ -172,6 +194,43 @@ export function Glyph({ name, className }: { name: GlyphName; className?: string
   return (
     <svg className={`ly-ico ${className ?? ''}`} viewBox="0 0 24 24" aria-hidden>
       {SHAPES[name]}
+    </svg>
+  )
+}
+
+/**
+ * El icono de la Apariencia, que se TRANSFORMA al cambiar de tema: la luna se
+ * abre en sol (el mordisco se va y salen los rayos) y el sol se vuelve destello.
+ * Todo por CSS (menu.css, .mn-morph[data-s]): el SVG no se cambia, se anima.
+ */
+export function ThemeGlyph({ theme }: { theme: string }): React.JSX.Element {
+  const mask = `mn-bite-${useId().replace(/[^a-zA-Z0-9-]/g, '')}`
+  return (
+    <svg className="ly-ico mn-morph" data-s={theme} viewBox="0 0 24 24" aria-hidden>
+      <mask id={mask}>
+        <rect x="-10" y="-10" width="44" height="44" fill="#fff" />
+        <circle className="mn-bite" cx="17" cy="7" r="7" fill="#000" />
+      </mask>
+      <circle
+        className="mn-body"
+        cx="12"
+        cy="12"
+        r="8"
+        fill="currentColor"
+        stroke="none"
+        mask={`url(#${mask})`}
+      />
+      <g className="mn-rays">
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="m4.93 4.93 1.41 1.41" />
+        <path d="m17.66 17.66 1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="m6.34 17.66-1.41 1.41" />
+        <path d="m19.07 4.93-1.41 1.41" />
+      </g>
+      <path className="mn-spark" d={SPARK} fill="currentColor" stroke="none" />
     </svg>
   )
 }

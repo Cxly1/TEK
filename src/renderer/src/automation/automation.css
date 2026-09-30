@@ -23,12 +23,12 @@
 }
 .auto-tab:hover {
   color: var(--text-hi);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--tint-rgb), 0.04);
 }
 .auto-tab.is-active {
   color: var(--gold);
-  border-color: rgba(244, 213, 138, 0.35);
-  background: rgba(244, 213, 138, 0.06);
+  border-color: rgba(var(--gold-bright-rgb), 0.35);
+  background: rgba(var(--gold-bright-rgb), 0.06);
 }
 
 .auto-form {
@@ -39,7 +39,7 @@
   margin-top: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.015);
+  background: rgba(var(--tint-rgb), 0.015);
 }
 .auto-field {
   display: flex;
@@ -61,7 +61,7 @@
 .auto-input,
 .auto-select,
 .auto-textarea {
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--well);
   border: 1px solid var(--line);
   border-radius: 9px;
   color: var(--text-hi);
@@ -73,7 +73,7 @@
 .auto-input:focus,
 .auto-select:focus,
 .auto-textarea:focus {
-  border-color: rgba(244, 213, 138, 0.45);
+  border-color: rgba(var(--gold-bright-rgb), 0.45);
 }
 .auto-textarea {
   font-family: var(--font-mono);
@@ -110,14 +110,14 @@
 }
 .auto-btn:hover {
   color: var(--text-hi);
-  border-color: #3a3f47;
+  border-color: var(--line-hover);
 }
 .auto-btn-gold {
   background: var(--gold);
   border: none;
   border-radius: 999px;
   padding: 7px 14px;
-  color: #0a0a0b;
+  color: var(--on-gold);
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
@@ -140,7 +140,7 @@
 }
 .auto-add:hover {
   color: var(--gold);
-  border-color: rgba(244, 213, 138, 0.4);
+  border-color: rgba(var(--gold-bright-rgb), 0.4);
 }
 
 .auto-meta {
@@ -154,7 +154,7 @@
   padding: 8px 10px;
   border-radius: 9px;
   border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--well);
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-hi);
@@ -165,7 +165,7 @@
 }
 .auto-result.is-error {
   color: var(--accent-warm);
-  border-color: rgba(255, 77, 61, 0.3);
+  border-color: rgba(var(--warm-rgb), 0.3);
 }
 .auto-token {
   display: flex;
@@ -177,7 +177,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--gold-bright);
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--well);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 10px;
@@ -191,9 +191,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid rgba(255, 77, 61, 0.5);
-  background: rgba(255, 77, 61, 0.1);
-  color: #ff6e61;
+  border: 1px solid rgba(var(--warm-rgb), 0.5);
+  background: rgba(var(--warm-rgb), 0.1);
+  color: var(--danger-text);
   border-radius: 999px;
   padding: 3px 10px;
   font-family: var(--font-mono);
@@ -205,7 +205,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #ff4d3d;
+  background: var(--danger);
   animation: rec-pulse 1.2s ease-in-out infinite;
 }
 @keyframes rec-pulse {

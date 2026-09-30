@@ -11,13 +11,13 @@
   gap: 12px;
   width: min(360px, 88vw);
   padding: 13px 14px;
-  border: 1px solid #23272d;
+  border: 1px solid var(--card-line);
   border-radius: 14px;
   background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 22px 60px rgba(var(--shade-rgb), calc(0.55 * var(--shade-k)));
 }
 .dl-toast.is-completed {
-  border-color: rgba(126, 224, 165, 0.35);
+  border-color: rgba(var(--ok-rgb), 0.35);
 }
 .dlt-icon {
   display: grid;
@@ -26,13 +26,13 @@
   height: 30px;
   flex-shrink: 0;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.05);
   color: var(--gold);
   font-size: 15px;
 }
 .dlt-icon.is-done {
-  color: #7ee0a5;
-  background: rgba(126, 224, 165, 0.12);
+  color: var(--ok);
+  background: rgba(var(--ok-rgb), 0.12);
 }
 .dlt-body {
   flex: 1;
@@ -57,7 +57,7 @@
   margin-top: 4px;
   height: 3px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--tint-rgb), 0.08);
   overflow: hidden;
 }
 .dlt-bar-fill {
@@ -81,7 +81,7 @@
   font-weight: 600;
   cursor: pointer;
   background: var(--gold);
-  color: #0a0a0b;
+  color: var(--on-gold);
   transition: background 0.15s ease;
 }
 .dlt-btn:hover {
@@ -95,8 +95,8 @@
 }
 .dlt-btn.ghost:hover {
   color: var(--text-hi);
-  border-color: #3a3f47;
-  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--line-hover);
+  background: rgba(var(--tint-rgb), 0.03);
 }
 .dlt-close {
   background: none;
@@ -110,5 +110,5 @@
 }
 .dlt-close:hover {
   color: var(--text-hi);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.05);
 }

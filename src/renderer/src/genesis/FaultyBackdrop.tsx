@@ -1,9 +1,16 @@
 import { useEffect, useRef } from 'react'
 
+/** Un trio "r, g, b" de tokens.css; si no se entiende, el de respaldo. */
+function rgbOf(v: string, fallback: number[]): number[] {
+  const n = v.split(',').map((x) => Number(x.trim()))
+  return n.length === 3 && n.every(Number.isFinite) ? n : fallback
+}
+
 /**
  * Campo de puntos que reacciona al cursor: los puntos cercanos al puntero se
  * iluminan (con tinte fosforo/oro) y el resto queda muy tenue, con un leve
  * latido para que respire aunque no muevas el mouse. Es lo que da vida a Genesis.
+ * Los colores salen del tema (--dots y --dots-near en tokens.css).
  */
 export function FaultyBackdrop(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -20,6 +27,19 @@ export function FaultyBackdrop(): React.JSX.Element {
     let w = 0
     let h = 0
     let raf = 0
+    // Color base de los puntos y hacia donde viran cerca del cursor. Se releen
+    // solo cuando cambia el tema (comparar el atributo no cuesta nada).
+    let theme: string | null = null
+    let base = [232, 233, 235]
+    let near = [244, 203, 115]
+    const readColors = (): void => {
+      const t = document.documentElement.dataset.theme ?? ''
+      if (t === theme) return
+      theme = t
+      const cs = getComputedStyle(document.documentElement)
+      base = rgbOf(cs.getPropertyValue('--dots'), base)
+      near = rgbOf(cs.getPropertyValue('--dots-near'), near)
+    }
 
     const resize = (): void => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
@@ -37,6 +57,7 @@ export function FaultyBackdrop(): React.JSX.Element {
 
     const draw = (t: number): void => {
       raf = requestAnimationFrame(draw)
+      readColors()
       ctx.clearRect(0, 0, w, h)
       const breathe = 0.04 + 0.02 * Math.sin(t / 900)
       const mx = mouse.current.x
@@ -46,7 +67,7 @@ export function FaultyBackdrop(): React.JSX.Element {
       // path con un unico fillStyle. Solo los ~150 cercanos al puntero (de ~2000)
       // pagan su string de color individual por frame.
       const near: number[] = []
-      ctx.fillStyle = `rgba(232,233,235,${breathe})`
+      ctx.fillStyle = `rgba(${base.join(',')},${breathe})`
       ctx.beginPath()
       for (let y = GAP; y < h; y += GAP) {
         for (let x = GAP; x < w; x += GAP) {
@@ -62,10 +83,10 @@ export function FaultyBackdrop(): React.JSX.Element {
         const y = near[i + 1]
         const gold = near[i + 2]
         const a = breathe + gold * 0.55
-        // color: blanco fosforo, virando a oro cerca del cursor
-        const r = Math.round(232 + gold * 12)
-        const g = Math.round(233 - gold * 30)
-        const b = Math.round(235 - gold * 120)
+        // color: el de base (fosforo), virando al acento cerca del cursor
+        const r = Math.round(base[0] + gold * (near[0] - base[0]))
+        const g = Math.round(base[1] + gold * (near[1] - base[1]))
+        const b = Math.round(base[2] + gold * (near[2] - base[2]))
         ctx.fillStyle = `rgba(${r},${g},${b},${a})`
         const s = 1.4 + gold * 1.6
         ctx.fillRect(x - s / 2, y - s / 2, s, s)

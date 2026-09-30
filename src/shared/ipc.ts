@@ -1,3 +1,5 @@
+import type { ThemeName } from './theme'
+
 /**
  * Contrato IPC unico, compartido entre main y renderer.
  * Regla del proyecto: ningun canal "magico" con strings sueltos.
@@ -35,6 +37,12 @@ export const IPC = {
   tabDuplicate: 'tabs:duplicate',
   tabMove: 'tabs:move',
   tabContextMenu: 'tabs:contextMenu',
+
+  // Apariencia (Noche / Dia / Borgoña)
+  /** SINCRONO: el tema actual. Lo pide el preload de cada superficie antes de
+   *  que su pagina pinte nada (asi no hay un fotograma con otros colores). */
+  themeGet: 'theme:get',
+  themeSet: 'theme:set',
 
   // Perfil de quien usa TEK (nombre para el saludo + tutorial visto)
   profileGet: 'profile:get',
@@ -205,7 +213,9 @@ export const IPC = {
   /** A la capa flotante: que pintar (null = nada; la capa queda oculta). */
   layerShow: 'layer:show',
   /** Al shell: que paso en la capa (se eligio algo del menu, o se cerro sola). */
-  layerEvent: 'layer:event'
+  layerEvent: 'layer:event',
+  /** A todas las superficies de TEK: cambio el tema (se repintan al vuelo). */
+  themeChanged: 'theme:changed'
 } as const
 
 /**
@@ -804,6 +814,18 @@ export type MenuIcon =
   | 'route'
   | 'refresh'
   | 'more'
+  | 'moon'
+  | 'sun'
+  | 'spark'
+  /** El de la Apariencia: se transforma luna ↔ sol ↔ destello con el valor. */
+  | 'theme'
+
+/** Una de las opciones de un selector (ver MenuItem.choice). */
+export interface MenuChoice {
+  id: string
+  icon: MenuIcon
+  label: string
+}
 
 export interface MenuItem {
   id: string
@@ -819,6 +841,12 @@ export interface MenuItem {
   dot?: boolean
   /** Abre esta subpagina del menu en vez de ejecutar nada. */
   page?: string
+  /**
+   * Selector de varias opciones en la misma fila (la Apariencia). Elegir una
+   * manda `${id}:${opcion}` y NO cierra el menu: el cambio se ve al momento.
+   * Con el teclado, Enter pasa a la siguiente.
+   */
+  choice?: { value: string; options: MenuChoice[] }
 }
 
 export interface MenuPage {
@@ -1159,6 +1187,17 @@ export interface TekApi {
     pick(id: string, keepOpen: boolean): void
     /** Capa: clic fuera, Esc o un atajo — se cierra sin elegir nada. */
     dismiss(): void
+  }
+  /**
+   * Apariencia. El preload ya marca `<html data-theme>` antes de pintar y al
+   * cambiar; esto es para quien lo necesite en JS (el menu, los lienzos).
+   */
+  theme: {
+    /** El tema actual (sincrono: ya lo tiene el preload). */
+    get(): ThemeName
+    set(theme: ThemeName): Promise<ThemeName>
+    /** Avisa de cada cambio. Devuelve funcion para desuscribir. */
+    onChange(cb: (theme: ThemeName) => void): () => void
   }
   /** Suscribe al estado de pestanas. Devuelve una funcion para desuscribir. */
   onTabsState(cb: (state: TabsState) => void): () => void

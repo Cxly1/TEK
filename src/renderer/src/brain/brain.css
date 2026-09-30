@@ -8,7 +8,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(4, 4, 6, 0.62);
+  background: rgba(var(--scrim-rgb), calc(0.62 * var(--scrim-k)));
   backdrop-filter: blur(6px);
 }
 .brain-panel {
@@ -16,10 +16,10 @@
   max-height: 84vh;
   display: flex;
   flex-direction: column;
-  border: 1px solid #23272d;
+  border: 1px solid var(--card-line);
   border-radius: 18px;
   background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 30px 90px rgba(var(--shade-rgb), calc(0.6 * var(--shade-k)));
   overflow: hidden;
 }
 
@@ -54,7 +54,7 @@
 }
 .brain-x:hover {
   color: var(--text-hi);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.05);
 }
 
 .brain-body {
@@ -101,12 +101,12 @@
   border-radius: 999px;
   cursor: pointer;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--tint-rgb), 0.02);
   transition: all 0.15s ease;
 }
 .brain-toggle.is-on {
-  color: #7ee0a5;
-  border-color: rgba(126, 224, 165, 0.4);
+  color: var(--ok);
+  border-color: rgba(var(--ok-rgb), 0.4);
 }
 .brain-toggle.is-off {
   color: var(--text-lo);
@@ -129,7 +129,7 @@
   transition: background 0.14s ease;
 }
 .brain-list li:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--tint-rgb), 0.03);
 }
 .brain-dot {
   width: 8px;
@@ -211,15 +211,15 @@
   width: 100%;
   padding: 10px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 77, 61, 0.3);
-  background: rgba(255, 77, 61, 0.06);
+  border: 1px solid rgba(var(--warm-rgb), 0.3);
+  background: rgba(var(--warm-rgb), 0.06);
   color: var(--accent-warm);
   font-size: 12.5px;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 .brain-wipe:hover {
-  background: rgba(255, 77, 61, 0.12);
+  background: rgba(var(--warm-rgb), 0.12);
 }
 
 /* Acciones de "Datos de navegacion" (borrado de cookies/cache/storage). */
@@ -233,8 +233,8 @@
   margin-left: auto;
   padding: 7px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 77, 61, 0.3);
-  background: rgba(255, 77, 61, 0.06);
+  border: 1px solid rgba(var(--warm-rgb), 0.3);
+  background: rgba(var(--warm-rgb), 0.06);
   color: var(--accent-warm);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -242,7 +242,7 @@
   transition: background 0.15s ease;
 }
 .brain-data-wipe:hover {
-  background: rgba(255, 77, 61, 0.12);
+  background: rgba(var(--warm-rgb), 0.12);
 }
 .brain-cleared {
   color: var(--gold);
@@ -261,10 +261,10 @@
   align-items: center;
   gap: 22px;
   padding: 14px 16px 14px 20px;
-  border: 1px solid rgba(244, 213, 138, 0.4);
+  border: 1px solid rgba(var(--gold-bright-rgb), 0.4);
   border-radius: 16px;
   background: linear-gradient(180deg, var(--bg-elevated), var(--bg-surface));
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 24px 70px rgba(var(--shade-rgb), calc(0.55 * var(--shade-k)));
   max-width: min(680px, 92vw);
 }
 .routine-info {
@@ -305,7 +305,7 @@
 }
 .routine-cancel:hover {
   color: var(--text-hi);
-  border-color: #3a3f47;
+  border-color: var(--line-hover);
 }
 .routine-open {
   display: inline-flex;
@@ -315,7 +315,7 @@
   border: none;
   border-radius: 999px;
   padding: 8px 14px;
-  color: #0a0a0b;
+  color: var(--on-gold);
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
@@ -331,7 +331,7 @@
   height: 18px;
   padding: 0 4px;
   border-radius: 999px;
-  background: rgba(10, 10, 11, 0.25);
+  background: var(--pill);
   font-family: var(--font-mono);
   font-size: 11px;
 }

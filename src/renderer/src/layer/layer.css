@@ -18,14 +18,14 @@ html[data-surface='layer'] body {
   flex-direction: column;
   overflow: hidden;
   background: var(--bg-elevated);
-  border: 1px solid #2a2e34;
+  border: 1px solid var(--panel-line);
   border-radius: var(--radius);
   /* Flota sobre paginas claras y oscuras: sombra corta y suave (una larga dejaba
      un halo gris sucio sobre fondos blancos); el borde ya marca el contorno. */
   box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.34),
-    0 2px 6px rgba(0, 0, 0, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    0 10px 28px rgba(var(--shade-rgb), calc(0.34 * var(--shade-k))),
+    0 2px 6px rgba(var(--shade-rgb), calc(0.24 * var(--shade-k))),
+    inset 0 1px 0 rgba(var(--tint-rgb), 0.035);
   transform-origin: top right;
   animation: ly-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
 }
@@ -95,7 +95,7 @@ html[data-surface='layer'] body {
 }
 .ly-iconbtn:hover,
 .ly-iconbtn.is-on {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.06);
   color: var(--text-hi);
 }
 .ly-iconbtn.is-danger:hover {
@@ -113,7 +113,7 @@ html[data-surface='layer'] body {
   flex: none;
   height: 1px;
   margin: 5px 8px;
-  background: #23272c;
+  background: var(--sep);
 }
 
 .ly-badge {
@@ -125,7 +125,7 @@ html[data-surface='layer'] body {
   place-items: center;
   border-radius: 999px;
   background: var(--gold);
-  color: #0a0a0b;
+  color: var(--on-gold);
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 700;
@@ -146,13 +146,13 @@ html[data-surface='layer'] body {
   background: transparent;
 }
 .ly-list::-webkit-scrollbar-thumb {
-  background: #2a2e34;
+  background: var(--scroll);
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 .ly-list::-webkit-scrollbar-thumb:hover {
-  background-color: #3a3f47;
+  background-color: var(--scroll-hover);
 }
 .ly-list::-webkit-scrollbar-button {
   display: none;
@@ -180,7 +180,7 @@ html[data-surface='layer'] body {
     border-color 0.12s ease;
 }
 .ly-row[data-active='true'] {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(var(--tint-rgb), 0.045);
   border-left-color: var(--gold);
 }
 .ly-row[data-active='true'] > .ly-ico {

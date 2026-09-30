@@ -6,7 +6,7 @@
   justify-content: center;
   align-items: flex-start;
   padding-top: 14vh;
-  background: rgba(6, 6, 7, 0.55);
+  background: rgba(var(--void-rgb), 0.55);
   backdrop-filter: blur(8px) saturate(0.9);
 }
 
@@ -16,8 +16,8 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow:
-    0 24px 80px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+    0 24px 80px rgba(var(--shade-rgb), calc(0.6 * var(--shade-k))),
+    0 0 0 1px rgba(var(--tint-rgb), 0.02) inset;
   overflow: hidden;
 }
 
@@ -81,7 +81,7 @@
     border-color 0.15s ease;
 }
 .cmd-row.is-active {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--tint-rgb), 0.03);
   border-left-color: var(--gold);
 }
 .cmd-icon {

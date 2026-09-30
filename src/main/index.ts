@@ -6,6 +6,7 @@ import {
   ipcMain,
   session,
   shell,
+  webContents,
   WebContentsView
 } from 'electron'
 import { join } from 'node:path'
@@ -28,6 +29,7 @@ import {
   type Watcher,
   type Workspace
 } from '@shared/ipc'
+import { THEMES, type ThemeName } from '@shared/theme'
 import { ViewManager } from './features/ViewManager'
 import { FloatingLayer } from './features/FloatingLayer'
 import { Brain } from './features/brain/Brain'
@@ -42,6 +44,7 @@ import { Feedback } from './features/Feedback'
 import { Privacy } from './features/Privacy'
 import { Updater } from './features/Updater'
 import { Media } from './features/Media'
+import { Appearance } from './features/Appearance'
 import { Settings } from './features/dev/Settings'
 import { DevRadar } from './features/dev/DevRadar'
 import { Automation } from './features/dev/Automation'
@@ -77,6 +80,8 @@ let arcade: Arcade | null = null
 let feedback: Feedback | null = null
 let updater: Updater | null = null
 let media: Media | null = null
+/** Noche / Dia / Borgoña. Vive a nivel de app (la ventana la lee al nacer). */
+let appearance: Appearance | null = null
 /** Capa flotante (menu ☰, Descargas, Historial) encima de la pagina. Vive con la ventana. */
 let floating: FloatingLayer | null = null
 
@@ -97,6 +102,31 @@ function sendToShell(channel: string, payload: unknown): void {
  */
 function fromShell(e: { sender: Electron.WebContents }): boolean {
   return mainWindow !== null && !mainWindow.isDestroyed() && e.sender === mainWindow.webContents
+}
+
+/**
+ * ¿Es una superficie de TEK (shell, capa flotante, barra del mini-player)? Son
+ * las que cargan el renderer propio; las pestanas cargan webs.
+ */
+function isTekSurface(wc: Electron.WebContents): boolean {
+  const url = wc.getURL()
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (isDev && devUrl && url.startsWith(devUrl)) return true
+  return url.startsWith('file://') && url.includes('/renderer/index.html')
+}
+
+/**
+ * Cambio de apariencia: fondo de la ventana y de la barra del mini-player (lo
+ * que se ve antes de que pinte el CSS) y aviso a cada superficie de TEK, cuyo
+ * preload cambia `<html data-theme>` sin esperar a React.
+ */
+function applyTheme(theme: ThemeName): void {
+  const info = THEMES[theme]
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBackgroundColor(info.void)
+  views?.setChromeBackground(info.elevated)
+  for (const wc of webContents.getAllWebContents()) {
+    if (!wc.isDestroyed() && isTekSurface(wc)) wc.send(IPC.themeChanged, theme)
+  }
 }
 
 /**
@@ -127,7 +157,8 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     frame: false,
-    backgroundColor: '#060607',
+    // El del tema: es lo que se ve en el instante antes de que pinte el shell.
+    backgroundColor: THEMES[appearance?.get() ?? 'noche'].void,
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
@@ -155,6 +186,7 @@ function createWindow(): void {
   })
 
   views = new ViewManager(mainWindow, brain!, adblock!, favicons!, loadPipChrome)
+  views.setChromeBackground(THEMES[appearance?.get() ?? 'noche'].elevated)
   wireAutomation(views)
 
   // Menu ☰, Descargas e Historial: su propia capa nativa, transparente, encima
@@ -411,6 +443,17 @@ function registerIpc(): void {
   ipcMain.handle(IPC.arcadeSetMuted, (e, mudo: unknown) =>
     fromShell(e) ? arcade?.setMudo(mudo) ?? SIN_MARCAS : SIN_MARCAS
   )
+
+  // Apariencia. Leerla, cualquier superficie de TEK: su preload la pide SINCRONA
+  // antes de pintar. Cambiarla, solo el shell o la capa (el selector vive en el
+  // menu ☰, que se pinta en la capa).
+  ipcMain.on(IPC.themeGet, (e) => {
+    e.returnValue = appearance?.get() ?? 'noche'
+  })
+  ipcMain.handle(IPC.themeSet, (e, theme: unknown) => {
+    if (!appearance) return 'noche'
+    return fromShell(e) || floating?.owns(e.sender) ? appearance.set(theme) : appearance.get()
+  })
 
   ipcMain.handle(IPC.appVersion, (e) => (fromShell(e) ? app.getVersion() : ''))
   // Reportar un fallo: solo desde el shell, y el propio Feedback valida y acota
@@ -726,6 +769,10 @@ app.whenReady().then(async () => {
     console.error('[tek] Widevine CDM no disponible:', err)
   }
 
+  // Primero la apariencia: la ventana y las paginas nacen ya con su tema.
+  appearance = new Appearance()
+  appearance.onChange = applyTheme
+
   brain = new Brain()
   adblock = new Adblock(PARTITION)
   void adblock.init() // carga cache/baseline y refresca listas en segundo plano
@@ -829,4 +876,6 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   media?.dispose()
   media = null
+  appearance?.dispose()
+  appearance = null
 })

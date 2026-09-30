@@ -52,7 +52,7 @@
 }
 /* Resaltado unico para raton y teclado (lo pone MenuPanel en data-active). */
 .mn-row[data-active='true'] {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(var(--tint-rgb), 0.045);
   border-left-color: var(--gold);
 }
 .mn-row:focus-visible {
@@ -96,8 +96,8 @@
   width: 26px;
   height: 15px;
   border-radius: 999px;
-  background: #202328;
-  border: 1px solid #30353c;
+  background: var(--sw-bg);
+  border: 1px solid var(--field-line);
   transition:
     background 0.18s ease,
     border-color 0.18s ease;
@@ -117,18 +117,135 @@
     box-shadow 0.18s ease;
 }
 .mn-sw.is-on {
-  border-color: rgba(227, 179, 65, 0.55);
-  background: rgba(227, 179, 65, 0.12);
+  border-color: rgba(var(--gold-rgb), 0.55);
+  background: rgba(var(--gold-rgb), 0.12);
 }
 .mn-sw.is-on::after {
   left: 13px;
   background: var(--gold);
-  box-shadow: 0 0 8px rgba(227, 179, 65, 0.45);
+  box-shadow: 0 0 8px rgba(var(--gold-rgb), 0.45);
+}
+
+/* Apariencia: tres iconos en la misma fila (luna / sol / destello). El elegido
+   lleva el acento como filo, igual que el interruptor: nunca de relleno. */
+.mn-choice {
+  cursor: pointer;
+}
+.mn-seg {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--sep);
+  border-radius: 8px;
+}
+.mn-seg-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-lo);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+/* Mas especifico que ".mn-row[data-active] .ly-ico": los iconos del selector
+   siguen a su boton, no a la fila. */
+.mn-row .mn-seg-btn .ly-ico {
+  width: 14px;
+  height: 14px;
+  color: inherit;
+}
+.mn-seg-btn:hover {
+  color: var(--text-hi);
+}
+.mn-seg-btn.is-on {
+  background: rgba(var(--tint-rgb), 0.06);
+  color: var(--gold-bright);
+  box-shadow: inset 0 0 0 1px rgba(var(--gold-rgb), 0.55);
+}
+
+/* El icono de la fila se TRANSFORMA: la luna se abre en sol (el mordisco se va
+   y salen los rayos) y el sol se vuelve destello. Geometria del SVG animada por
+   CSS (r, cx, cy), sin cambiar de icono. */
+.mn-morph {
+  overflow: visible;
+}
+.mn-morph .mn-body {
+  transition:
+    r 0.45s cubic-bezier(0.3, 1.4, 0.5, 1),
+    opacity 0.3s ease;
+}
+.mn-morph .mn-bite {
+  transition:
+    cx 0.45s cubic-bezier(0.3, 1.2, 0.5, 1),
+    cy 0.45s ease;
+}
+.mn-morph .mn-rays,
+.mn-morph .mn-spark {
+  transform-origin: 12px 12px;
+  transition:
+    transform 0.5s cubic-bezier(0.3, 1.3, 0.5, 1),
+    opacity 0.3s ease;
+}
+.mn-morph[data-s='noche'] .mn-body {
+  r: 8px;
+}
+.mn-morph[data-s='noche'] .mn-bite {
+  cx: 17px;
+  cy: 7px;
+}
+.mn-morph[data-s='noche'] .mn-rays {
+  transform: rotate(-90deg) scale(0);
+  opacity: 0;
+}
+.mn-morph[data-s='noche'] .mn-spark {
+  transform: rotate(-45deg) scale(0);
+  opacity: 0;
+}
+.mn-morph[data-s='dia'] .mn-body {
+  r: 4.5px;
+}
+.mn-morph[data-s='dia'] .mn-bite {
+  cx: 30px;
+  cy: -6px;
+}
+.mn-morph[data-s='dia'] .mn-rays {
+  transform: none;
+  opacity: 1;
+}
+.mn-morph[data-s='dia'] .mn-spark {
+  transform: rotate(-45deg) scale(0);
+  opacity: 0;
+}
+.mn-morph[data-s='borgona'] .mn-body {
+  r: 0px;
+  opacity: 0;
+}
+.mn-morph[data-s='borgona'] .mn-bite {
+  cx: 30px;
+  cy: -6px;
+}
+.mn-morph[data-s='borgona'] .mn-rays {
+  transform: rotate(90deg) scale(0);
+  opacity: 0;
+}
+.mn-morph[data-s='borgona'] .mn-spark {
+  transform: none;
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .mn-vp.is-ready,
-  .mn-track.is-ready {
+  .mn-track.is-ready,
+  .mn-morph *,
+  .mn-seg-btn {
     transition: none;
   }
 }

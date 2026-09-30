@@ -1,25 +1,129 @@
-/* TEK — tokens de diseno. Estetica "fosforo sobre vacio" (retro CRT + minimalismo). */
+/* TEK — tokens de diseno. Estetica "fosforo sobre vacio" (retro CRT + minimalismo).
+
+   TRES APARIENCIAS: Noche (la de siempre, en :root), Dia y Borgoña. El preload
+   marca <html data-theme> antes de que la pagina pinte (ver preload/index.ts) y
+   cada tema redefine AQUI los mismos tokens.
+
+   REGLA: ningun color suelto en los CSS. Todo sale de aqui y cada token existe
+   en los tres temas. Los que acaban en -rgb son el trio "r, g, b" para poner
+   transparencias: rgba(var(--tint-rgb), 0.05). Los valores de Noche son los de
+   siempre al pixel: no cambiar uno sin querer cambiar Noche. */
 :root {
   /* Fondo */
   --bg-void: #060607;
+  --void-rgb: 6, 6, 7;
   --bg-surface: #0e0f11;
   --bg-elevated: #16181b;
   --line: #1e2125;
+  /* Centro de los degradados de fondo (lienzo, arranque, arcade) */
+  --glow-newtab: #0c0d10;
+  --glow-genesis: #0a0b0d;
+  --glow-arcade: #0b0c0f;
+  /* Barra de pestañas */
+  --bar: #1a1d21;
+  --bar-line: #2a2e34;
+  /* Campos (direccion, buscador de la pestaña nueva, historial) */
+  --field: #0f1114;
+  --field-line: #30353c;
+  --search-line: #2c3138;
+  /* Lineas y bordes */
+  --sep: #23272c;
+  --card-line: #23272d;
+  --panel-line: #2a2e34;
+  --line-hover: #3a3f47;
+  --line-hover-2: #3a4046;
+  --line-hover-3: #3a3f46;
+  --node-line: #2b2f35;
+  --plus-line: #1e2125;
+  /* Piezas sueltas */
+  --sw-bg: #202328;
+  --menu-bg: #1b1e22;
+  --scroll: #2a2e34;
+  --scroll-hover: #3a3f47;
+  --news-scroll: #24282e;
+  --news-scroll-hover: #333941;
+  --dot-off: #2a2e33;
+  --dot-off-hover: #414750;
+  --pill: rgba(10, 10, 11, 0.25);
+  --well: rgba(0, 0, 0, 0.35);
+  --chip-base: #15171b;
+  --chip-ink: #ffffff;
+  --note-bg: #141416;
+  --note-dot: rgba(212, 175, 55, 0.35);
 
-  /* Texto */
+  /* Texto (de mas a menos) */
   --text-hi: #f2f3f5;
+  --hi-rgb: 242, 243, 245;
+  --text-2: #d6d8dc;
+  --text-mid: #a7adb4;
+  --text-mid-2: #9aa0a6;
+  --text-mid-3: #9ba0a6;
+  --text-3: #7f858c;
+  --text-3b: #7c8188;
   --text-lo: #6b7075;
+  --text-4: #5c626b;
+  --text-4b: #5c6167;
+  --text-dim: #4a4f55;
+  --text-faint: #43484e;
   --phosphor: #e8e9eb;
+  --phos-rgb: 232, 233, 235;
+
+  /* Superposiciones: hover (tinte), sombras y velos de los paneles */
+  --tint-rgb: 255, 255, 255;
+  --shade-rgb: 0, 0, 0;
+  --shade-k: 1;
+  --scrim-rgb: 4, 4, 6;
+  --spot-rgb: 4, 4, 5;
+  --scrim-k: 1;
+  /* Lineas de barrido CRT (SIN SEÑAL, el apagado): color y fuerza */
+  --scan-rgb: 0, 0, 0;
+  --scan-k: 1;
 
   /* Halos / CRT */
   --glow: rgba(242, 243, 245, 0.35);
+  --halo: rgba(232, 233, 235, 0.08);
   --accent-warm: #ff4d3d; /* aberracion cromatica roja */
   --accent-cool: #3da2ff; /* aberracion cromatica azul */
+  --warm-rgb: 255, 77, 61;
+  --cool-rgb: 61, 162, 255;
+  --crt-tube: radial-gradient(
+    115% 75% at 50% 50%,
+    #ffffff 0%,
+    #dfe2e6 26%,
+    #6c7176 58%,
+    #15171a 82%,
+    var(--bg-void) 100%
+  );
+  --tubo-line: #191c20;
+  --tubo-glow: rgba(242, 243, 245, 0.035);
+  /* Campo de puntos del arranque: color base y hacia donde vira cerca del
+     cursor (trios r, g, b; los lee el canvas de FaultyBackdrop). */
+  --dots: 232, 233, 235;
+  --dots-near: 244, 203, 115;
 
-  /* Oro — SOLO hover/glow bajo el cursor, nunca relleno */
+  /* Acento. En Noche y Dia es oro; en Borgoña, perla. SOLO hover/glow bajo el
+     cursor, nunca relleno. */
   --gold: #e3b341;
+  --gold-rgb: 227, 179, 65;
   --gold-bright: #f4d58a;
+  --gold-bright-rgb: 244, 213, 138;
   --gold-glow: rgba(227, 179, 65, 0.2);
+  --gold-soft: rgba(217, 180, 91, 0.45);
+  /* Texto encima del acento (numeritos, botones llenos) */
+  --on-gold: #0a0a0b;
+  /* Detalles que en Borgoña van en rosa: barras de musica, punto de la pestaña */
+  --detail: var(--gold);
+  --spark-2: var(--gold-bright);
+  /* Anillo que gira en la pestaña activa: su tramo apagado y su intensidad */
+  --ring-dim: #2e2008;
+  --ring-op: 0.6;
+
+  /* Estados */
+  --ok: #7ee0a5;
+  --ok-rgb: 126, 224, 165;
+  --danger: #ff4d3d;
+  --danger-text: #ff6e61;
+  --warn: #e0b877;
 
   /* Medidas */
   --topbar-h: 80px;
@@ -28,4 +132,207 @@
   /* Tipografia */
   --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Geist Mono', ui-monospace, 'Cascadia Code', monospace;
+}
+
+/* DIA — blanco calido con oro viejo. El oro va FUERTE (sobre blanco, el de
+   Noche se perdia) y los contornos del acento son solidos, no transparentes. */
+:root[data-theme='dia'] {
+  --bg-void: #f6f5f1;
+  --void-rgb: 246, 245, 241;
+  --bg-surface: #fbfaf7;
+  --bg-elevated: #ffffff;
+  --line: #e6e2d9;
+  --glow-newtab: #ffffff;
+  --glow-genesis: #ffffff;
+  --glow-arcade: #ffffff;
+  --bar: #eeece6;
+  --bar-line: #dcd8ce;
+  --field: #ffffff;
+  --field-line: #d9d4c9;
+  --search-line: #d9d4c9;
+  --sep: #ebe7de;
+  --card-line: #e3ded3;
+  --panel-line: #d9d0bd;
+  --line-hover: #c9bfa9;
+  --line-hover-2: #c9bfa9;
+  --line-hover-3: #c9bfa9;
+  --node-line: #d9d4c9;
+  --plus-line: #d9d0bd;
+  --sw-bg: #ece8df;
+  --menu-bg: #ffffff;
+  --scroll: #d9d4c9;
+  --scroll-hover: #c2baa8;
+  --news-scroll: #dcd7cc;
+  --news-scroll-hover: #c2baa8;
+  --dot-off: #dcd7cc;
+  --dot-off-hover: #c2baa8;
+  --pill: rgba(60, 48, 20, 0.1);
+  --well: rgba(60, 48, 20, 0.045);
+  --chip-base: #ffffff;
+  --chip-ink: #1c1b19;
+  --note-bg: #f1eee6;
+  --note-dot: rgba(184, 134, 11, 0.4);
+
+  --text-hi: #1c1b19;
+  --hi-rgb: 28, 27, 25;
+  --text-2: #2e2c28;
+  --text-mid: #4f4b44;
+  --text-mid-2: #58534b;
+  --text-mid-3: #58534b;
+  --text-3: #6a655b;
+  --text-3b: #6a655b;
+  --text-lo: #7d776d;
+  --text-4: #8c867b;
+  --text-4b: #8c867b;
+  --text-dim: #a39d91;
+  --text-faint: #aaa498;
+  --phosphor: #1c1b19;
+  --phos-rgb: 28, 27, 25;
+
+  --tint-rgb: 60, 48, 20;
+  --shade-rgb: 60, 46, 18;
+  --shade-k: 0.4;
+  --scrim-rgb: 40, 34, 22;
+  --spot-rgb: 40, 34, 22;
+  --scrim-k: 0.5;
+  /* Sobre papel, las rayas negras de Noche serian un rayado gris: van tenues */
+  --scan-rgb: 90, 70, 30;
+  --scan-k: 0.3;
+
+  --glow: rgba(184, 134, 11, 0.18);
+  --halo: rgba(184, 134, 11, 0.1);
+  --accent-warm: #d23a2a;
+  --accent-cool: #1f6fd1;
+  --warm-rgb: 210, 58, 42;
+  --cool-rgb: 31, 111, 209;
+  --crt-tube: radial-gradient(
+    115% 75% at 50% 50%,
+    #7a5500 0%,
+    #b8860b 24%,
+    #e2c46f 55%,
+    #f3e6c4 80%,
+    var(--bg-void) 100%
+  );
+  --tubo-line: #d9d0bd;
+  --tubo-glow: rgba(184, 134, 11, 0.1);
+  --dots: 28, 27, 25;
+  --dots-near: 184, 134, 11;
+
+  --gold: #b8860b;
+  --gold-rgb: 184, 134, 11;
+  --gold-bright: #8f6400;
+  --gold-bright-rgb: 143, 100, 0;
+  --gold-glow: rgba(184, 134, 11, 0.3);
+  --gold-soft: rgba(184, 134, 11, 0.45);
+  --on-gold: #ffffff;
+  --ring-dim: #e2c46f;
+  --ring-op: 1;
+
+  --ok: #1f9d57;
+  --ok-rgb: 31, 157, 87;
+  --danger: #d23a2a;
+  --danger-text: #c0392b;
+  --warn: #9a6b12;
+}
+
+/* BORGOÑA — vino casi negro (el iPhone color vino) con contornos BLANCOS finos,
+   como de perla. El acento es perla; el rosa queda para los detalles. */
+:root[data-theme='borgona'] {
+  --bg-void: #12070a;
+  --void-rgb: 18, 7, 10;
+  --bg-surface: #1a0a0f;
+  --bg-elevated: #25101a;
+  --line: rgba(255, 236, 241, 0.27);
+  --glow-newtab: #2c0f18;
+  --glow-genesis: #2c0f18;
+  --glow-arcade: #2c0f18;
+  --bar: #1f0c13;
+  --bar-line: rgba(255, 236, 241, 0.2);
+  --field: #1b0a11;
+  --field-line: rgba(255, 240, 244, 0.42);
+  --search-line: rgba(255, 240, 244, 0.62);
+  --sep: rgba(255, 236, 241, 0.16);
+  --card-line: rgba(255, 236, 241, 0.4);
+  --panel-line: rgba(255, 236, 241, 0.45);
+  --line-hover: rgba(255, 240, 244, 0.62);
+  --line-hover-2: rgba(255, 240, 244, 0.62);
+  --line-hover-3: rgba(255, 240, 244, 0.62);
+  --node-line: rgba(255, 236, 241, 0.35);
+  --plus-line: rgba(255, 236, 241, 0.4);
+  --sw-bg: #2e1420;
+  --menu-bg: #2a121d;
+  --scroll: rgba(255, 236, 241, 0.2);
+  --scroll-hover: rgba(255, 236, 241, 0.35);
+  --news-scroll: rgba(255, 236, 241, 0.18);
+  --news-scroll-hover: rgba(255, 236, 241, 0.32);
+  --dot-off: rgba(255, 236, 241, 0.2);
+  --dot-off-hover: rgba(255, 236, 241, 0.4);
+  --pill: rgba(10, 3, 6, 0.3);
+  --well: rgba(0, 0, 0, 0.3);
+  --chip-base: #1f0c13;
+  --chip-ink: #ffffff;
+  --note-bg: #2a121d;
+  --note-dot: rgba(232, 166, 179, 0.45);
+
+  --text-hi: #f8e9ec;
+  --hi-rgb: 248, 233, 236;
+  --text-2: #ecd5db;
+  --text-mid: #d8b8c0;
+  --text-mid-2: #caa9b2;
+  --text-mid-3: #caa9b2;
+  --text-3: #b3909a;
+  --text-3b: #b3909a;
+  --text-lo: #a07d87;
+  --text-4: #8a6872;
+  --text-4b: #8a6872;
+  --text-dim: #6e4f58;
+  --text-faint: #664852;
+  --phosphor: #fbeef1;
+  --phos-rgb: 251, 238, 241;
+
+  --tint-rgb: 255, 236, 241;
+  --shade-rgb: 0, 0, 0;
+  --shade-k: 1;
+  --scrim-rgb: 10, 3, 6;
+  --spot-rgb: 10, 3, 6;
+  --scrim-k: 1;
+  --scan-rgb: 0, 0, 0;
+  --scan-k: 1;
+
+  --glow: rgba(247, 207, 215, 0.45);
+  --halo: rgba(255, 236, 241, 0.1);
+  --accent-warm: #ff4d3d;
+  --accent-cool: #a9b4ff;
+  --warm-rgb: 255, 77, 61;
+  --cool-rgb: 169, 180, 255;
+  --crt-tube: radial-gradient(
+    115% 75% at 50% 50%,
+    #ffffff 0%,
+    #f7dde3 26%,
+    #b8707f 58%,
+    #3a1420 82%,
+    var(--bg-void) 100%
+  );
+  --tubo-line: rgba(255, 236, 241, 0.4);
+  --tubo-glow: rgba(232, 166, 179, 0.14);
+  --dots: 255, 236, 241;
+  --dots-near: 240, 150, 172;
+
+  --gold: #f3dfe4;
+  --gold-rgb: 243, 223, 228;
+  --gold-bright: #ffffff;
+  --gold-bright-rgb: 255, 255, 255;
+  --gold-glow: rgba(232, 166, 179, 0.34);
+  --gold-soft: rgba(255, 236, 241, 0.45);
+  --on-gold: #2a0d16;
+  --detail: #e8a6b3;
+  --spark-2: #e8a6b3;
+  --ring-dim: #5a2231;
+  --ring-op: 0.95;
+
+  --ok: #7ee0a5;
+  --ok-rgb: 126, 224, 165;
+  --danger: #ff4d3d;
+  --danger-text: #ff6e61;
+  --warn: #f0c9a0;
 }

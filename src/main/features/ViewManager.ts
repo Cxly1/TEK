@@ -1109,6 +1109,11 @@ export class ViewManager {
     this.mini.toggleFloat()
   }
 
+  /** Apariencia: el fondo nativo de la barra del mini-player. */
+  setChromeBackground(color: string): void {
+    this.mini.setBackground(color)
+  }
+
   togglePipMinimize(): void {
     this.mini.toggleMinimize()
   }

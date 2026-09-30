@@ -16,8 +16,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  background: #1a1d21;
-  border-bottom: 1px solid #2a2e34;
+  background: var(--bar);
+  border-bottom: 1px solid var(--bar-line);
 }
 
 /* Barra de carga indeterminada: un segmento dorado que barre la costura inferior
@@ -106,7 +106,7 @@
     color 0.16s ease;
 }
 .tab:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--tint-rgb), 0.05);
   color: var(--text-hi);
 }
 .tab.is-active {
@@ -132,17 +132,17 @@
      el anillo dorado se sigue moviendo pero ya no "quema". */
   background: conic-gradient(
     from 0deg,
-    #2e2008,
+    var(--ring-dim),
     var(--gold),
     var(--gold-bright),
     var(--gold),
-    #2e2008,
+    var(--ring-dim),
     var(--gold),
     var(--gold-bright),
     var(--gold),
-    #2e2008
+    var(--ring-dim)
   );
-  opacity: 0.6;
+  opacity: var(--ring-op);
   animation: tek-spin 2.6s linear infinite;
   pointer-events: none;
 }
@@ -192,7 +192,7 @@
   flex-shrink: 0;
 }
 .tab.is-active .tab-dot {
-  background: var(--gold);
+  background: var(--detail);
   box-shadow: 0 0 6px var(--gold-glow);
 }
 .tab-dot.is-loading {
@@ -221,7 +221,7 @@
   opacity: 1;
 }
 .tab-close:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(var(--tint-rgb), 0.12);
   color: var(--text-hi);
 }
 
@@ -440,7 +440,7 @@
     color 0.14s ease;
 }
 .tab-mute:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(var(--tint-rgb), 0.12);
   color: var(--text-hi);
 }
 .tab-mute.is-audible {
@@ -502,7 +502,7 @@
     background 0.15s ease;
 }
 .tb-brain:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.06);
   color: var(--gold-bright);
 }
 
@@ -524,7 +524,7 @@
     color 0.15s ease;
 }
 .tb-tool:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.06);
   color: var(--gold-bright);
 }
 .tb-tool.is-busy {
@@ -532,7 +532,7 @@
 }
 /* ☰ con su menu abierto: se queda encendido, como si siguiera bajo el cursor. */
 .tb-tool.is-open {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--tint-rgb), 0.06);
   color: var(--gold-bright);
 }
 /* Novedades sin ver: un punto discreto, sin numero que contar. */
@@ -583,7 +583,7 @@
   place-items: center;
   border-radius: 999px;
   background: var(--gold);
-  color: #0a0a0b;
+  color: var(--on-gold);
   font-family: var(--font-mono);
   font-size: 8.5px;
   font-weight: 700;
@@ -608,7 +608,7 @@
   cursor: pointer;
 }
 .tb-wbtn:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(var(--tint-rgb), 0.07);
   color: var(--text-hi);
 }
 .tb-close:hover {
@@ -653,7 +653,7 @@
     background 0.15s ease;
 }
 .tb-icon:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(var(--tint-rgb), 0.07);
   color: var(--gold-bright);
 }
 .tb-icon:disabled {
@@ -668,9 +668,9 @@
   gap: 9px;
   height: 32px;
   padding: 0 14px;
-  border: 1px solid #30353c;
+  border: 1px solid var(--field-line);
   border-radius: 999px;
-  background: #0f1114;
+  background: var(--field);
   color: var(--text-hi);
   font-family: var(--font-mono);
   font-size: 13px;
@@ -678,7 +678,7 @@
   transition: border-color 0.2s ease;
 }
 .tb-host:hover {
-  border-color: rgba(244, 213, 138, 0.45);
+  border-color: rgba(var(--gold-bright-rgb), 0.45);
 }
 /* El boton que ocupa la barra: es quien abre la paleta. Reset propio porque
    .tb-host dejo de ser <button> para poder llevar el de copiar dentro. */
@@ -745,7 +745,7 @@
 }
 .tb-copy:hover {
   color: var(--gold-bright);
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(var(--tint-rgb), 0.07);
 }
 .tb-host.is-copied .tb-copy {
   color: var(--gold-bright);
@@ -764,7 +764,7 @@
 .tb-host .tb-k {
   font-size: 11px;
   color: var(--text-lo);
-  border: 1px solid #30353c;
+  border: 1px solid var(--field-line);
   border-radius: 6px;
   padding: 2px 6px;
 }
@@ -790,7 +790,7 @@
   justify-content: center;
   gap: 18px;
   padding: 24px;
-  background: radial-gradient(78% 58% at 50% 40%, #0c0d10 0%, var(--bg-void) 72%);
+  background: radial-gradient(78% 58% at 50% 40%, var(--glow-newtab) 0%, var(--bg-void) 72%);
 }
 /* El lienzo recibe el foco (programatico) para navegar con teclado; sin marco. */
 .newtab:focus,
@@ -832,23 +832,23 @@
   gap: 12px;
   height: 52px;
   padding: 0 16px;
-  border: 1px solid #2c3138;
+  border: 1px solid var(--search-line);
   border-radius: 14px;
-  background: #0f1114;
+  background: var(--field);
   color: var(--text-hi);
   font-family: var(--font-mono);
   font-size: 14.5px;
   cursor: text;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 12px 40px rgba(var(--shade-rgb), calc(0.4 * var(--shade-k)));
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease,
     transform 0.12s ease;
 }
 .newtab-search:hover {
-  border-color: rgba(244, 213, 138, 0.55);
+  border-color: rgba(var(--gold-bright-rgb), 0.55);
   box-shadow:
-    0 12px 44px rgba(0, 0, 0, 0.45),
+    0 12px 44px rgba(var(--shade-rgb), calc(0.45 * var(--shade-k))),
     0 0 0 3px var(--gold-glow);
 }
 .newtab-search:active {
@@ -867,7 +867,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-lo);
-  border: 1px solid #30353c;
+  border: 1px solid var(--field-line);
   border-radius: 6px;
   padding: 3px 7px;
 }
@@ -895,7 +895,7 @@
   padding: 0 14px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--tint-rgb), 0.02);
   color: var(--text-lo);
   font-family: var(--font-ui);
   font-size: 12.5px;
@@ -906,8 +906,8 @@
     background 0.16s ease;
 }
 .chip:hover {
-  border-color: rgba(244, 213, 138, 0.45);
-  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(var(--gold-bright-rgb), 0.45);
+  background: rgba(var(--tint-rgb), 0.04);
   color: var(--text-hi);
 }
 .chip-icon {
@@ -942,7 +942,7 @@
     transform 0.12s ease;
 }
 .music-card:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--tint-rgb), 0.03);
   opacity: 1;
 }
 .music-card:active {
@@ -956,7 +956,7 @@
 }
 .music-eq i {
   width: 3px;
-  background: var(--gold);
+  background: var(--detail);
   border-radius: 2px;
   animation: eq 1s ease-in-out infinite;
 }
@@ -1035,7 +1035,7 @@
     transform 0.12s ease;
 }
 .sug-tile:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--tint-rgb), 0.04);
 }
 .sug-tile:active {
   transform: translateY(1px);
@@ -1060,14 +1060,14 @@
 /* Fallback de inicial: SOLO este caso lleva un chip teñido (si no, quedaria suelto). */
 .sug-icon:has(.sug-glyph-text) {
   border-radius: 11px;
-  background: color-mix(in srgb, var(--c) 18%, #15171b);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--c) 18%, var(--chip-base));
+  box-shadow: inset 0 0 0 1px rgba(var(--tint-rgb), 0.05);
 }
 .sug-glyph-text {
   font-family: var(--font-mono);
   font-size: 18px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--c) 80%, #ffffff);
+  color: color-mix(in srgb, var(--c) 80%, var(--chip-ink));
 }
 .sug-name {
   font-family: var(--font-mono);
@@ -1110,28 +1110,28 @@
   gap: 8px;
   padding: 7px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(126, 224, 165, 0.28);
-  background: rgba(126, 224, 165, 0.05);
+  border: 1px solid rgba(var(--ok-rgb), 0.28);
+  background: rgba(var(--ok-rgb), 0.05);
   color: var(--text-hi);
   font-size: 12.5px;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .dev-chip:hover {
-  border-color: rgba(126, 224, 165, 0.55);
-  background: rgba(126, 224, 165, 0.1);
+  border-color: rgba(var(--ok-rgb), 0.55);
+  background: rgba(var(--ok-rgb), 0.1);
 }
 .dev-chip-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #7ee0a5;
-  box-shadow: 0 0 8px rgba(126, 224, 165, 0.7);
+  background: var(--ok);
+  box-shadow: 0 0 8px rgba(var(--ok-rgb), 0.7);
 }
 .dev-chip-port {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: #7ee0a5;
+  color: var(--ok);
 }
 .dev-chip-title {
   max-width: 180px;
@@ -1166,7 +1166,7 @@
 }
 .tb-mbtn:hover {
   color: var(--text-hi);
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(var(--tint-rgb), 0.07);
 }
 /* Sin soporte del sitio: presente pero apagado (consistencia > desaparecer). */
 .tb-mbtn:disabled {
@@ -1215,8 +1215,8 @@
   gap: 7px;
   padding: 5px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(var(--tint-rgb), 0.06);
+  background: rgba(var(--tint-rgb), 0.02);
 }
 .canvas-np-site {
   display: grid;
@@ -1245,7 +1245,7 @@
   border-radius: 50%;
   font-size: 10px;
   color: var(--gold);
-  background: radial-gradient(circle at center, rgba(212, 175, 55, 0.35) 0 3px, #141416 3px 100%);
+  background: radial-gradient(circle at center, var(--note-dot) 0 3px, var(--note-bg) 3px 100%);
 }
 .canvas-np-eq {
   display: flex;
@@ -1255,7 +1255,7 @@
 }
 .canvas-np-eq i {
   width: 2.5px;
-  background: var(--gold);
+  background: var(--detail);
   border-radius: 2px;
   animation: eq 1s ease-in-out infinite;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { LayerAnchor, LayerContent, LayerKind } from '@shared/ipc'
 import { useTek } from '@/store'
+import { useTheme } from '@/lib/theme'
 import { buildToolsModel, runToolsPick } from './ToolsMenu'
 
 /** El ☰ de la barra: de el cuelgan el menu y Descargas. */
@@ -32,6 +33,7 @@ export function LayerController(): null {
       ).length
   )
   const dlBadge = activeDl || unseenDone
+  const theme = useTheme()
 
   const kind: LayerKind | null = menuOpen
     ? 'menu'
@@ -45,10 +47,13 @@ export function LayerController(): null {
     if (kind === 'history') return { kind }
     if (kind === 'downloads') return { kind, anchor: toolsAnchor() }
     if (kind === 'menu') {
-      return { kind, model: buildToolsModel(toolsAnchor(), { pending, exclusive, dlBadge }) }
+      return {
+        kind,
+        model: buildToolsModel(toolsAnchor(), { pending, exclusive, dlBadge, theme })
+      }
     }
     return null
-  }, [kind, pending, exclusive, dlBadge])
+  }, [kind, pending, exclusive, dlBadge, theme])
 
   // Que esta abierto en la capa ahora mismo (segun lo que le pedimos).
   const shown = useRef<LayerKind | null>(null)

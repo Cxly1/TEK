@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { MenuItem, MenuModel, MenuPage } from '@shared/ipc'
-import { Chevron, Glyph } from './icons'
+import { Chevron, Glyph, ThemeGlyph } from './icons'
 import { dropdownPos, useViewportSize } from './position'
 import './menu.css'
 
@@ -69,8 +69,21 @@ export function MenuPanel({ model }: { model: MenuModel }): React.JSX.Element | 
       goTo(it.page, viaKeyboard)
       return
     }
+    // Un selector (la Apariencia) pasa a la siguiente opcion.
+    if (it.choice) {
+      const opts = it.choice.options
+      const at = opts.findIndex((o) => o.id === it.choice?.value)
+      const next = opts[(at + 1) % opts.length]
+      if (next) choose(it, next.id)
+      return
+    }
     // Un interruptor deja el menu abierto (se ve el cambio); lo demas lo cierra.
     window.tek.layer.pick(it.id, it.toggle !== undefined)
+  }
+
+  // Elegir una opcion de un selector deja el menu abierto: el cambio se ve.
+  function choose(it: MenuItem, option: string): void {
+    window.tek.layer.pick(`${it.id}:${option}`, true)
   }
 
   // Alto del visor = alto de la pagina que se ve (la otra sigue a su lado).
@@ -182,6 +195,47 @@ export function MenuPanel({ model }: { model: MenuModel }): React.JSX.Element | 
       )
     }
     const it = en.item
+    if (it.choice) {
+      const ch = it.choice
+      const now = ch.options.find((o) => o.id === ch.value)
+      // Una fila con botones dentro no puede ser <button>: es un grupo. El clic
+      // en la fila pasa a la siguiente opcion; en un boton, elige esa.
+      return (
+        <div
+          key={it.id}
+          className="mn-row mn-choice"
+          role="menuitem"
+          aria-label={`${it.label}: ${now?.label ?? ''}`}
+          title={it.hint}
+          data-active={props['data-active']}
+          onPointerMove={props.onPointerMove}
+          onClick={props.onClick}
+        >
+          {it.icon === 'theme' ? <ThemeGlyph theme={ch.value} /> : <Glyph name={it.icon} />}
+          <span className="mn-label">{it.label}</span>
+          <span className="mn-seg" role="radiogroup" aria-label={it.label}>
+            {ch.options.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                tabIndex={-1}
+                role="radio"
+                aria-checked={o.id === ch.value}
+                aria-label={o.label}
+                title={o.label}
+                className={`mn-seg-btn ${o.id === ch.value ? 'is-on' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (here) choose(it, o.id)
+                }}
+              >
+                <Glyph name={o.icon} />
+              </button>
+            ))}
+          </span>
+        </div>
+      )
+    }
     return (
       <button
         key={it.id}

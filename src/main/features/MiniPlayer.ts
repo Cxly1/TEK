@@ -28,7 +28,8 @@ const DEF_W = 384 // ancho del video por defecto
 const DEF_H = 216 // alto del video por defecto (16:9)
 const MARGIN = 16 // separacion del borde en modo acoplado
 const MIN_W = 240 // ancho minimo al redimensionar (flotante)
-/** Color de la barra mientras React monta (evita el flash blanco de la vista nativa). */
+/** Color de la barra mientras React monta (evita el flash blanco de la vista nativa).
+ *  Es el del tema: lo pone y lo cambia el main con setBackground. */
 const BAR_BG = '#16181b'
 
 /**
@@ -52,6 +53,8 @@ export class MiniPlayer {
 
   private view: WebContentsView | null = null
   private chrome: WebContentsView | null = null
+  /** Fondo nativo de la barra (el del tema). */
+  private bg = BAR_BG
   private meta: PipMeta | null = null
   private mode: PipMode = 'docked'
   private minimized = false
@@ -96,6 +99,13 @@ export class MiniPlayer {
     this.win.on('resize', () => {
       if (this.view && this.mode === 'docked') this.layout()
     })
+  }
+
+  /** Cambio de apariencia: el fondo nativo de la barra (y de la flotante). */
+  setBackground(color: string): void {
+    this.bg = color
+    this.chrome?.setBackgroundColor(color)
+    if (this.floatWin && !this.floatWin.isDestroyed()) this.floatWin.setBackgroundColor(color)
   }
 
   /** ¿Hay un video en el mini ahora mismo? */
@@ -371,7 +381,7 @@ export class MiniPlayer {
         contextIsolation: true
       }
     })
-    chrome.setBackgroundColor(BAR_BG)
+    chrome.setBackgroundColor(this.bg)
     this.chrome = chrome
     this.win.contentView.addChildView(chrome)
     this.loadChrome(chrome)
@@ -448,7 +458,7 @@ export class MiniPlayer {
       alwaysOnTop: true,
       minWidth: MIN_W,
       minHeight: BAR,
-      backgroundColor: BAR_BG,
+      backgroundColor: this.bg,
       hasShadow: true
     })
     // 'screen-saver' = flota incluso sobre apps a pantalla completa.

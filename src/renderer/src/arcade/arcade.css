@@ -11,7 +11,7 @@
   flex-direction: column;
   /* Fondo opaco a proposito: NADA de backdrop-filter. Un blur a pantalla
      completa por debajo de un bucle a 60 fps es la receta para los tirones. */
-  background: radial-gradient(70% 60% at 50% 42%, #0b0c0f 0%, var(--bg-void) 74%);
+  background: radial-gradient(70% 60% at 50% 42%, var(--glow-arcade) 0%, var(--bg-void) 74%);
 }
 
 .arc-bar {
@@ -75,11 +75,11 @@
 .arc-tubo {
   display: block;
   border-radius: 10px;
-  border: 1px solid #191c20;
+  border: 1px solid var(--tubo-line);
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.6),
-    0 24px 70px rgba(0, 0, 0, 0.65),
-    0 0 90px rgba(242, 243, 245, 0.035);
+    0 0 0 1px rgba(var(--shade-rgb), calc(0.6 * var(--shade-k))),
+    0 24px 70px rgba(var(--shade-rgb), calc(0.65 * var(--shade-k))),
+    0 0 90px var(--tubo-glow);
   cursor: none;
   touch-action: none;
 }
@@ -102,7 +102,7 @@
   display: inline-block;
   padding: 1px 5px;
   margin-right: 4px;
-  border: 1px solid #23272d;
+  border: 1px solid var(--card-line);
   border-radius: 4px;
   background: var(--bg-elevated);
   font: inherit;

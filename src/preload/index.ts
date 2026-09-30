@@ -16,6 +16,42 @@ import {
   type UiCommand,
   type UpdateState
 } from '@shared/ipc'
+import { isThemeName, type ThemeName } from '@shared/theme'
+
+// --- Apariencia: se aplica ANTES de que la pagina pinte ---------------------
+// El tema se pide SINCRONO y se marca en <html data-theme> en cuanto existe el
+// documento: los tokens de tokens.css cuelgan de ese atributo, asi que ninguna
+// superficie de TEK (shell, capa flotante, barra del mini-player) enseña ni un
+// fotograma con los colores de otro tema. Los cambios llegan por evento y se
+// aplican aqui mismo, sin esperar a React; lo que pinta en canvas lo lee del
+// mismo atributo.
+let theme: ThemeName = 'noche'
+try {
+  const t: unknown = ipcRenderer.sendSync(IPC.themeGet)
+  if (isThemeName(t)) theme = t
+} catch {
+  /* sin main que conteste (no deberia pasar): Noche */
+}
+const themeListeners = new Set<(t: ThemeName) => void>()
+function markTheme(): boolean {
+  const el = document.documentElement
+  if (!el) return false
+  el.dataset.theme = theme
+  return true
+}
+if (!markTheme()) {
+  // En document-start aun no hay <html>: se marca en cuanto el parser lo crea.
+  const mo = new MutationObserver(() => {
+    if (markTheme()) mo.disconnect()
+  })
+  mo.observe(document, { childList: true })
+}
+ipcRenderer.on(IPC.themeChanged, (_e, t: unknown) => {
+  if (!isThemeName(t) || t === theme) return
+  theme = t
+  markTheme()
+  for (const cb of themeListeners) cb(t)
+})
 
 /** Suscripcion estandar a un evento main->renderer. Devuelve el des-suscriptor. */
 function on<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -200,6 +236,14 @@ const api: TekApi = {
     onShow: (cb: (c: LayerContent | null) => void) => on(IPC.layerShow, cb),
     pick: (id, keepOpen) => ipcRenderer.send(IPC.layerPick, id, keepOpen),
     dismiss: () => ipcRenderer.send(IPC.layerDismiss)
+  },
+  theme: {
+    get: () => theme,
+    set: (t) => ipcRenderer.invoke(IPC.themeSet, t),
+    onChange: (cb) => {
+      themeListeners.add(cb)
+      return () => themeListeners.delete(cb)
+    }
   },
   onTabsState: (cb: (state: TabsState) => void) => {
     const listener = (_e: unknown, state: TabsState): void => cb(state)
