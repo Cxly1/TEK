@@ -20,7 +20,12 @@ const COUNTDOWN = 6
  * cancelar. Tu mandas, pero por defecto te ahorra los clics.
  */
 export function RoutineToast(): React.JSX.Element {
-  const routine = useTek((s) => s.routine) as Routine
+  // Igual que AutoToast: durante la animacion de salida el store ya vale null;
+  // se pinta la ultima rutina (si no, `routine.bucket` de null dejaba TEK en negro).
+  const live = useTek((s) => s.routine)
+  const last = useRef(live)
+  if (live) last.current = live
+  const routine = last.current as Routine
   const setRoutine = useTek((s) => s.setRoutine)
   const openPalette = useTek((s) => s.openPalette)
   const [left, setLeft] = useState(COUNTDOWN)

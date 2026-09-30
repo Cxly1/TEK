@@ -13,7 +13,13 @@ const COUNTDOWN = 5
  * que la auto-rutina del cerebro — tu mandas, TEK te ahorra los clics.
  */
 export function AutoToast(): React.JSX.Element {
-  const toast = useTek((s) => s.recipeToast) as RecipeToastInfo
+  // Al cerrarse, el store ya vale null pero la animacion de salida sigue
+  // pintando el toast: se queda con el ultimo que hubo. Sin esto, `toast.name`
+  // de null tumbaba TODA la interfaz en negro al acabar la cuenta atras.
+  const live = useTek((s) => s.recipeToast)
+  const last = useRef(live)
+  if (live) last.current = live
+  const toast = last.current as RecipeToastInfo
   const setRecipeToast = useTek((s) => s.setRecipeToast)
   const [left, setLeft] = useState(COUNTDOWN)
   const ran = useRef(false)
