@@ -31,6 +31,17 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    version: '0.5.0',
+    date: '2026-09-29',
+    title: 'Noche, Día y Borgoña',
+    items: [
+      'Nuevo: elige cómo se ve TEK. Noche, Día o Borgoña, en ☰ › Más opciones.',
+      'Cambia al momento en todo TEK, hasta en el arranque y en el arcade.',
+      'Las páginas con modo oscuro te siguen: claras en Día, oscuras en Noche y Borgoña.',
+      'Arreglado: TEK ya no se queda en negro al cerrarse el aviso de una receta.'
+    ]
+  },
+  {
     version: '0.4.1',
     date: '2026-09-28',
     title: 'Páginas que se leen bien',
