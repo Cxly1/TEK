@@ -71,7 +71,7 @@ const MIN_SUGGEST_VISITS = 3
 
 /**
  * Cuanto se guarda el historial (y lo que se aprende de la musica y las
- * busquedas). Elegido con Migue: 1 año. Lo mas viejo se borra al arrancar y una
+ * busquedas): 1 año. Lo mas viejo se borra al arrancar y una
  * vez al dia. Con su ritmo (~8.000 visitas/año) el ⌘K se queda en ~15 ms; sin
  * limite crecia para siempre (Chrome guarda 90 dias).
  */

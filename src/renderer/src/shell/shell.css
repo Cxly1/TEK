@@ -415,7 +415,7 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  /* Dos pasadas al formarse el grupo y luego quieto (eligio Migue, 2026-10): el
+  /* Dos pasadas al formarse el grupo y luego quieto (2026-10): el
      brillo anima background-position, que obliga a repintar en cada frame; en
      bucle infinito la barra no paraba nunca. Al pasar el raton vuelve a brillar
      mientras dure el hover (otro nombre de animacion = arranca de nuevo). */
