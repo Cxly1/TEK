@@ -32,6 +32,11 @@ electronVersion: 37.10.3
 # (sin Widevine) y el instalador sale sin DRM aunque en `pnpm dev` funcione.
 # Empaquetamos el runtime de castlabs que ya esta instalado en node_modules.
 electronDist: node_modules/electron/dist
+# SIN fuses de Electron, a proposito: castlabs EVS DENIEGA la firma VMP de un
+# TEK.exe con cualquier fuse cambiado ("Binary signature denied"; probado el
+# 2026-10-02, incluso cambiando solo el de cifrado de cookies), y sin VMP no hay
+# Netflix ni Spotify. Entre fuses y DRM, DRM. Lo que si se puede, va en
+# src/main/index.ts (no arrancar con un depurador pedido por linea de comandos).
 # Y el paquete resultante hay que volver a firmarlo con VMP (ver el hook).
 # En afterSign, NO en afterPack: electron-builder aun reescribe el .exe entre
 # ambos (icono/version) y eso invalida la firma.
@@ -55,6 +60,11 @@ win:
   target:
     - nsis
   artifactName: TEK-${version}-setup.${ext}
+  # No hay certificado Authenticode: este nombre solo hace que app-update.yml
+  # lleve `publisherName`, y con eso electron-updater llama a la verificacion de
+  # firma del instalador ANTES de darlo por descargado. Esa verificacion es la
+  # FIRMA PROPIA de TEK (Ed25519, Updater.verifyOwnSignature), no Authenticode.
+  publisherName: Cxly1
 
 nsis:
   oneClick: false

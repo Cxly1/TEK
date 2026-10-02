@@ -1,6 +1,7 @@
-import { app, powerMonitor } from 'electron'
+import { app, net, powerMonitor } from 'electron'
 import { join } from 'node:path'
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, createReadStream, readFileSync, writeFileSync } from 'node:fs'
+import { createHash, createPublicKey, verify } from 'node:crypto'
 // OJO, import POR DEFECTO y no `import { autoUpdater }`: electron-updater es
 // CommonJS y declara sus exports con `Object.defineProperty(exports, ...)`, que
 // el analizador de Node NO detecta. Como este main se compila a ESM
@@ -11,6 +12,7 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import electronUpdater from 'electron-updater'
 import type { UpdateState } from '@shared/ipc'
 import { JsonStore } from './dev/jsonStore'
+import { UPDATE_PUBLIC_KEY } from './updateKey'
 
 /**
  * Actualizacion de TEK contra las releases de GitHub.
@@ -32,11 +34,13 @@ import { JsonStore } from './dev/jsonStore'
  * momento, TEK lo sabia y no te lo decia en ningun sitio.
  *
  * CONTEXTO DE SEGURIDAD (importante): TEK no esta firmada con un certificado
- * Authenticode, asi que electron-updater NO puede verificar la firma del
- * instalador que baja. La confianza se apoya en HTTPS contra GitHub y en el
- * sha512 que viene en `latest.yml` (integridad, no autoria). Es el mismo nivel
- * que bajar el .exe a mano de la pagina de releases. Si algun dia hay
- * certificado, electron-updater empieza a verificar solo, sin tocar esto.
+ * Authenticode. Hasta 2026-10 la confianza era solo HTTPS + el sha512 de
+ * `latest.yml` (integridad, no autoria): quien tomara la cuenta de GitHub podia
+ * publicar un instalador que todos aceptarian. Ahora hay FIRMA PROPIA (Ed25519,
+ * ver verifyOwnSignature): la clave privada vive cifrada en el PC de quien
+ * publica, asi que la cuenta sola ya no basta. electron-updater la llama en su
+ * paso de "verificar la firma del instalador" (por eso `win.publisherName` en
+ * electron-builder.yml): si no cuadra, borra la descarga y no se instala nada.
  *
  * REQUISITO DEL RELEASE: hay que subir `latest.yml` junto al .exe o esto da 404.
  */
@@ -103,6 +107,9 @@ function plainNotes(raw: unknown): string {
 
 /** Traduce los fallos tipicos a algo que se pueda leer sin ser programador. */
 function friendlyError(msg: string): string {
+  if (/not signed by the application owner/i.test(msg)) {
+    return 'La actualización no trae una firma válida de TEK y se descartó por seguridad.'
+  }
   if (/ENOTFOUND|EAI_AGAIN|ENETUNREACH|ETIMEDOUT|ECONNREFUSED|ECONNRESET/i.test(msg)) {
     return 'No se pudo conectar con GitHub para comprobar si hay una versión nueva.'
   }
@@ -125,6 +132,8 @@ export class Updater {
   private wired = false
   /** La comprobacion en curso la pidio la persona: hay que contestarle siempre. */
   private manual = false
+  /** La version ofrecida por la ultima comprobacion (la que se descargaria). */
+  private offered = ''
   /**
    * Rastro persistente (userData/tek-updater.log): en el .exe empaquetado no
    * hay terminal, asi que el `console.error` de mas abajo no lo ve nadie. El
@@ -219,6 +228,12 @@ export class Updater {
     const au = electronUpdater.autoUpdater
     au.autoDownload = false
     au.autoInstallOnAppQuit = true
+    // Firma propia: electron-updater llama a esto con el instalador ya bajado y
+    // ANTES de darlo por descargado. Un texto = rechazado (lo borra y avisa).
+    const nsis = au as unknown as {
+      verifyUpdateCodeSignature: (publishers: string[], file: string) => Promise<string | null>
+    }
+    nsis.verifyUpdateCodeSignature = (_publishers, file) => this.verifyOwnSignature(file)
 
     au.on('checking-for-update', () => {
       this.log('checking-for-update')
@@ -227,6 +242,7 @@ export class Updater {
 
     au.on('update-available', (info) => {
       this.log(`update-available version=${info.version} manual=${this.manual} skipped-guardado=${this.prefs.data.skipped || '(ninguna)'}`)
+      this.offered = info.version
       // Lo primero, y pase lo que pase debajo: existe una mas nueva. Esto es lo
       // que enciende el punto del megafono y no se apaga por cerrar el aviso.
       this.remember(info.version)
@@ -327,6 +343,63 @@ export class Updater {
       /* idem: lo cuenta el manejador de 'error' */
     }
     return this.state
+  }
+
+  /**
+   * ¿Este instalador lo firmo quien publica TEK? Se baja `<instalador>.sig` de
+   * la misma release y se comprueba con la clave publica de updateKey.ts que la
+   * firma Ed25519 cubre ESTA version y ESTE archivo (su sha512). Devuelve null
+   * si vale, o el motivo para rechazarlo. Sin clave publica (aun no generada)
+   * no hay nada que comprobar y se acepta, como antes.
+   *
+   * MANTENER EN SYNC con scripts/sign-update.mjs (formato del mensaje).
+   */
+  private async verifyOwnSignature(file: string): Promise<string | null> {
+    if (!UPDATE_PUBLIC_KEY) {
+      this.log('firma propia: esta TEK aun no lleva clave publica; no se comprueba')
+      return null
+    }
+    const version = this.offered
+    if (!version) return 'no se sabe que version se esta instalando'
+    const url = `https://github.com/Cxly1/TEK/releases/download/v${version}/TEK-${version}-setup.exe.sig`
+    let sig: { format?: unknown; version?: unknown; sha512?: unknown; sig?: unknown }
+    try {
+      const res = await net.fetch(url)
+      if (!res.ok) return `falta la firma de TEK de la ${version} (HTTP ${res.status})`
+      sig = (await res.json()) as typeof sig
+    } catch (err) {
+      return `no se pudo bajar la firma de TEK: ${err instanceof Error ? err.message : String(err)}`
+    }
+    const sha512 = await new Promise<string>((resolve, reject) => {
+      const h = createHash('sha512')
+      createReadStream(file)
+        .on('data', (c) => h.update(c))
+        .on('end', () => resolve(h.digest('base64')))
+        .on('error', reject)
+    }).catch(() => '')
+    if (
+      sig.format !== 'tek-update-v1' ||
+      sig.version !== version ||
+      !sha512 ||
+      sig.sha512 !== sha512 ||
+      typeof sig.sig !== 'string'
+    ) {
+      this.log(`firma propia de ${version}: NO corresponde al instalador bajado`)
+      return 'la firma de TEK no corresponde a este instalador'
+    }
+    let ok = false
+    try {
+      ok = verify(
+        null,
+        Buffer.from(`tek-update-v1\n${version}\n${sha512}\n`),
+        createPublicKey(UPDATE_PUBLIC_KEY),
+        Buffer.from(sig.sig, 'base64')
+      )
+    } catch {
+      ok = false
+    }
+    this.log(`firma propia de ${version}: ${ok ? 'valida' : 'NO VALIDA'}`)
+    return ok ? null : 'la firma de TEK no es valida'
   }
 
   /** Cierra TEK y aplica la actualizacion ya descargada. */

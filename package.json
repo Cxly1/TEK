@@ -14,6 +14,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node scripts/vmp-dev.mjs && electron-vite dev",
+    "dev:prueba": "node scripts/vmp-dev.mjs && node scripts/dev-prueba.mjs",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
@@ -27,7 +28,10 @@
     "onlyBuiltDependencies": [
       "electron",
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
+    }
   },
   "dependencies": {
     "@ghostery/adblocker": "2.18.0",

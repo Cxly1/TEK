@@ -68,6 +68,29 @@ import {
 
 const isDev = !app.isPackaged
 
+// SIN FUSES: castlabs no firma VMP un TEK.exe con fuses cambiados (ver
+// electron-builder.yml), asi que el binario no puede negarse a ser depurado. Lo
+// que si se puede desde aqui: el TEK INSTALADO no arranca si alguien lo lanza
+// pidiendo un depurador por la linea de comandos (nadie lo necesita, y con el
+// puerto de depuracion abierto cualquier programa del equipo podria leer las
+// paginas abiertas y sus cookies). Es parcial: --inspect-brk para Node antes de
+// llegar aqui, y ELECTRON_RUN_AS_NODE ni siquiera ejecuta la app.
+if (!isDev) {
+  const DEBUG_SWITCHES = ['remote-debugging-port', 'remote-debugging-pipe', 'inspect', 'inspect-brk', 'inspect-port']
+  if (
+    DEBUG_SWITCHES.some((s) => app.commandLine.hasSwitch(s)) ||
+    process.execArgv.some((a) => a.startsWith('--inspect'))
+  ) {
+    app.exit(1)
+  }
+}
+
+// Perfil de PRUEBA, solo en dev: `pnpm dev:prueba` arranca sobre una COPIA de
+// tu perfil (scripts/dev-prueba.mjs) para probar cambios sin tocar el de verdad.
+// Va antes de nada que use userData, incluido el candado de instancia unica (que
+// es por perfil: asi puede correr a la vez que tu TEK instalado).
+if (isDev && process.env['TEK_PERFIL']) app.setPath('userData', process.env['TEK_PERFIL'])
+
 // La UI de TEK vive en UN sitio (dev server o el index.html empaquetado): el
 // guard de IPC y el candado de navegacion comparan contra esa URL exacta.
 initAppUrl(
