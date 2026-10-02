@@ -189,6 +189,12 @@ export const IPC = {
 
   // Eventos main -> renderer
   tabsState: 'tabs:state',
+  /**
+   * Favicons de las pestanas, por host (data URLs). Van APARTE de tabs:state y
+   * solo cuando cambian: antes viajaban dentro de cada pestana en CADA evento
+   * (hasta 1,4 veces por segundo con el contador del bloqueador).
+   */
+  tabsFavicons: 'tabs:favicons',
   downloadsState: 'downloads:state',
   /** Resultado de "buscar en pagina" (coincidencia activa / total). */
   foundInPage: 'view:foundInPage',
@@ -288,8 +294,6 @@ export interface TabMeta {
   muted: boolean
   /** nº de anuncios/trackers bloqueados en la carga actual de esta pestana. */
   blocked: number
-  /** data URL del favicon del sitio (o null si aun no se ha capturado). */
-  favicon?: string | null
   /** true si esta pestana esta ahora mismo en el mini-player (Picture-in-Picture). */
   pip?: boolean
   /** La carga fallo: el shell tapa la vista con la pantalla "SIN SEÑAL". null = todo bien. */
@@ -1210,6 +1214,8 @@ export interface TekApi {
   }
   /** Suscribe al estado de pestanas. Devuelve una funcion para desuscribir. */
   onTabsState(cb: (state: TabsState) => void): () => void
+  /** Favicons de las pestanas por host (solo cuando cambian). */
+  onTabsFavicons(cb: (icons: Record<string, string>) => void): () => void
   /** Resultado de la busqueda en pagina. Devuelve funcion para desuscribir. */
   onFound(cb: (r: FindResult) => void): () => void
   /** Comandos de UI desde el main (atajos con la pagina enfocada). */

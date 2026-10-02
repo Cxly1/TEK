@@ -199,6 +199,11 @@ export class ViewManager {
   private timingSince = 0
   /** Emit throttled cuando el adblock va bloqueando (refresca el contador). */
   private countEmitTimer: NodeJS.Timeout | null = null
+  /** Ultimo tabs:state y ultimos favicons mandados (no se repiten). */
+  private lastTabsJson = ''
+  private lastFaviconsSig = ''
+  /** ¿Se esta viendo la pestana nueva (el lienzo del shell)? */
+  private canvasShown = false
   /** Hooks de automatizacion (los cablea index.ts): navegacion y dom-ready. */
   onNavigate: ((tabId: string, url: string, host: string, wc: Electron.WebContents) => void) | null =
     null
@@ -208,6 +213,8 @@ export class ViewManager {
   onAudibleStart: ((tabId: string) => void) | null = null
   /** ¿Abrir DevTools solas al navegar a este host? (ajuste localhost). */
   shouldAutoDevtools: ((host: string) => boolean) | null = null
+  /** La pestana nueva (lienzo con los servidores locales) se ve o deja de verse. */
+  onCanvas: ((shown: boolean) => void) | null = null
   /**
    * Una pagina quiere abrir otra app (mailto:, tel:...). Lo resuelve
    * Permissions.openExternalFor: pregunta antes, con freno anti-spam. Nunca se
@@ -241,6 +248,16 @@ export class ViewManager {
     // Si la OS cierra la ventana flotante del mini, salimos del PiP limpiamente.
     this.mini.onWantExit = () => this.exitPip(false)
     this.win.on('resize', () => this.layout())
+    this.win.on('close', () => this.flushPersist())
+    // El shell recargo (HMR en dev, o se cayo y volvio): su estado vuelve a
+    // cero, asi que no vale "ya se lo mande". OJO: solo con pestanas. En la
+    // PRIMERA carga no hay ninguna, y un emit() guardaria una sesion vacia
+    // encima de la que aun no has decidido si reanudar.
+    this.win.webContents.on('did-finish-load', () => {
+      this.lastTabsJson = ''
+      this.lastFaviconsSig = ''
+      if (this.tabs.length > 0) this.emit()
+    })
     // El dwell solo corre cuando la ventana tiene el foco.
     this.win.on('blur', () => this.accrue())
     this.win.on('focus', () => this.resumeTiming())
@@ -763,7 +780,6 @@ export class ViewManager {
         audible: false,
         muted: false,
         blocked: 0,
-        favicon: null,
         pip: tab.id === this.mini.tabId,
         offline: null
       }
@@ -786,7 +802,6 @@ export class ViewManager {
       audible: !tab.blank && tab.audible,
       muted: wc.isAudioMuted(),
       blocked: tab.blank ? 0 : this.adblock.blockedFor(wc.id),
-      favicon: tab.blank ? null : this.favicons.get(tab.group),
       pip: tab.id === this.mini.tabId,
       offline: tab.offline
     }
@@ -798,8 +813,45 @@ export class ViewManager {
       tabs: this.tabs.map((t) => this.metaOf(t)),
       activeId: this.activeId
     }
-    this.win.webContents.send('tabs:state', state)
+    this.emitFavicons()
+    // Mismo estado que la ultima vez (un did-stop-loading que no cambia nada, el
+    // contador del bloqueador sin bloqueos nuevos...): no se manda. La barra no
+    // tiene que repintar lo que ya pinta.
+    const json = JSON.stringify(state)
+    if (json !== this.lastTabsJson) {
+      this.lastTabsJson = json
+      this.win.webContents.send(IPC.tabsState, state)
+    }
+    this.notifyCanvas()
     this.schedulePersist()
+  }
+
+  /**
+   * Favicons de las pestanas, por host y SOLO cuando cambian. Antes cada
+   * pestana llevaba su data URL (hasta 170 KB) en CADA tabs:state.
+   */
+  private emitFavicons(): void {
+    const icons: Record<string, string> = {}
+    for (const t of this.tabs) {
+      if (t.blank || !t.group || icons[t.group]) continue
+      const f = this.favicons.get(t.group)
+      if (f) icons[t.group] = f
+    }
+    const sig = Object.keys(icons)
+      .sort()
+      .map((h) => `${h}:${icons[h].length}:${icons[h].slice(-24)}`)
+      .join('|')
+    if (sig === this.lastFaviconsSig) return
+    this.lastFaviconsSig = sig
+    this.win.webContents.send(IPC.tabsFavicons, icons)
+  }
+
+  /** Avisa si la pestana nueva (el lienzo del shell) paso a verse o dejo de verse. */
+  private notifyCanvas(): void {
+    const on = !!this.active?.blank
+    if (on === this.canvasShown) return
+    this.canvasShown = on
+    this.onCanvas?.(on)
   }
 
   /** Emit del contador de bloqueos, como mucho cada ~700ms (evita saturar). */
@@ -831,7 +883,22 @@ export class ViewManager {
 
   private schedulePersist(): void {
     if (this.persistTimer) clearTimeout(this.persistTimer)
-    this.persistTimer = setTimeout(() => saveSession(this.serialize()), 400)
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      saveSession(this.serialize())
+    }, 400)
+  }
+
+  /**
+   * Guarda YA lo pendiente. Se llama al empezar a cerrar la ventana ('close'),
+   * cuando las pestanas aun estan vivas: antes un cambio en los ultimos 400 ms
+   * antes de cerrar se perdia (dispose solo cancelaba el temporizador).
+   */
+  private flushPersist(): void {
+    if (!this.persistTimer) return
+    clearTimeout(this.persistTimer)
+    this.persistTimer = null
+    saveSession(this.serialize())
   }
 
   // --- Construccion interna de pestanas --------------------------------------

@@ -202,6 +202,9 @@ function createWindow(): void {
   // imagen") cuenta como clic tuyo para el gestor de descargas.
   views.openExternal = (wc, url) => void permissions?.openExternalFor(wc, url)
   views.onExpectDownload = (url) => downloads?.expect(url)
+  // El radar de servidores locales solo escanea con la pestana nueva a la vista
+  // (es donde se ensenan) o si alguna receta lo necesita (ver syncRadarDemand).
+  views.onCanvas = (shown) => radar?.need('pestana-nueva', shown)
   wireAutomation(views)
 
   // Menu ☰, Descargas e Historial: su propia capa nativa, transparente, encima
@@ -370,6 +373,16 @@ function wireAutomation(v: ViewManager): void {
   }
   v.shouldAutoDevtools = (host) =>
     isLocalHost(host) && (settings?.get().autoDevtoolsLocalhost ?? false)
+}
+
+/**
+ * Una receta "al detectar un servidor en el puerto X" necesita el radar
+ * encendido todo el rato (si no, nunca veria aparecer el servidor). Sin
+ * ninguna activa, el radar solo corre con la pestana nueva a la vista.
+ */
+function syncRadarDemand(): void {
+  const needs = (automation?.recipes() ?? []).some((r) => r.enabled && r.trigger.type === 'server')
+  radar?.need('recetas', needs)
 }
 
 function registerIpc(): void {
@@ -585,7 +598,7 @@ function registerIpc(): void {
   handleTek(IPC.downloadsClear, () => downloads?.clear())
 
   // Radar de servers locales + ajustes dev
-  handleTek(IPC.devServers, () => radar?.list() ?? [])
+  handleTek(IPC.devServers, () => radar?.fresh() ?? [])
   handleTek(IPC.devScan, () => radar?.scan() ?? [])
   handleTek(IPC.devSettingsGet, () => settings?.get())
   handleTek(IPC.devSettingsSet, async (e, patch: Partial<DevSettings>) => {
@@ -609,8 +622,14 @@ function registerIpc(): void {
     macros: macros?.list() ?? [],
     recording: macros?.recording ?? false
   }))
-  handleTek(IPC.autoSaveRecipe, (_e, r: Recipe) => automation?.saveRecipe(r))
-  handleTek(IPC.autoDeleteRecipe, (_e, id: string) => automation?.deleteRecipe(id))
+  handleTek(IPC.autoSaveRecipe, (_e, r: Recipe) => {
+    automation?.saveRecipe(r)
+    syncRadarDemand()
+  })
+  handleTek(IPC.autoDeleteRecipe, (_e, id: string) => {
+    automation?.deleteRecipe(id)
+    syncRadarDemand()
+  })
   handleTek(IPC.autoRunRecipe, (_e, id: string) => automation?.run(id))
   handleTek(IPC.autoSaveWorkspace, (_e, w: Workspace) => automation?.saveWorkspace(w))
   handleTek(IPC.autoDeleteWorkspace, (_e, id: string) => automation?.deleteWorkspace(id))
@@ -891,7 +910,7 @@ app.whenReady().then(async () => {
   macros.onRecState = (rec) => sendToShell(IPC.autoRecState, rec)
   passwords.onOffer = (o) => sendToShell(IPC.pwOffer, o)
 
-  radar.start()
+  syncRadarDemand()
   automation.start()
   watchers.start()
   if (settings.get().bridgeEnabled) void bridge.start()

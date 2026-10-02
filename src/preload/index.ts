@@ -250,6 +250,7 @@ const api: TekApi = {
     ipcRenderer.on(IPC.tabsState, listener)
     return () => ipcRenderer.removeListener(IPC.tabsState, listener)
   },
+  onTabsFavicons: (cb: (icons: Record<string, string>) => void) => on(IPC.tabsFavicons, cb),
   onFound: (cb: (r: FindResult) => void) => {
     const listener = (_e: unknown, r: FindResult): void => cb(r)
     ipcRenderer.on(IPC.foundInPage, listener)

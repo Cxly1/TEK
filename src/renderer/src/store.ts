@@ -90,6 +90,8 @@ interface TekState {
   /** Grupos (por host) plegados en la barra. */
   collapsedGroups: Record<string, boolean>
   tabs: TabMeta[]
+  /** Favicons de las pestanas por host (llegan aparte, ver IPC.tabsFavicons). */
+  tabFavicons: Record<string, string>
   activeId: string | null
   setPhase: (p: Phase) => void
   setResume: (count: number | null) => void
@@ -134,6 +136,28 @@ interface TekState {
   closePalette: () => void
   togglePalette: () => void
   setTabs: (state: TabsState) => void
+  setTabFavicons: (icons: Record<string, string>) => void
+}
+
+/** ¿Dos fotos de la misma pestana dicen exactamente lo mismo? */
+function sameTab(a: TabMeta, b: TabMeta): boolean {
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.url === b.url &&
+    a.loading === b.loading &&
+    a.canGoBack === b.canGoBack &&
+    a.canGoForward === b.canGoForward &&
+    a.blank === b.blank &&
+    a.group === b.group &&
+    a.audible === b.audible &&
+    a.muted === b.muted &&
+    a.blocked === b.blocked &&
+    !!a.pip === !!b.pip &&
+    (a.offline?.url ?? '') === (b.offline?.url ?? '') &&
+    (a.offline?.code ?? 0) === (b.offline?.code ?? 0) &&
+    (a.offline?.desc ?? '') === (b.offline?.desc ?? '')
+  )
 }
 
 export const useTek = create<TekState>((set, get) => ({
@@ -174,6 +198,7 @@ export const useTek = create<TekState>((set, get) => ({
   recording: false,
   collapsedGroups: {},
   tabs: [],
+  tabFavicons: {},
   activeId: null,
   setPhase: (phase) => set({ phase }),
   setResume: (resume) => set({ resume }),
@@ -348,7 +373,19 @@ export const useTek = create<TekState>((set, get) => ({
       void window.tek.setVisible(!next)
       return { paletteOpen: next, seed: '', seedSelected: false }
     }),
-  setTabs: (state) => set({ tabs: state.tabs, activeId: state.activeId })
+  // Las pestanas que no cambiaron conservan su MISMO objeto: asi las que se
+  // pintan memorizadas (TabButton) no se repintan por cambios de otra.
+  setTabs: (state) =>
+    set((cur) => {
+      const prev = new Map(cur.tabs.map((t) => [t.id, t]))
+      const tabs = state.tabs.map((t) => {
+        const p = prev.get(t.id)
+        return p && sameTab(p, t) ? p : t
+      })
+      const unchanged = tabs.length === cur.tabs.length && tabs.every((t, i) => t === cur.tabs[i])
+      return { tabs: unchanged ? cur.tabs : tabs, activeId: state.activeId }
+    }),
+  setTabFavicons: (icons) => set({ tabFavicons: icons })
 }))
 
 /** Pestana activa derivada del estado (o undefined si no hay). */

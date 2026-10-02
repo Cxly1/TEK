@@ -52,6 +52,7 @@ export function App(): React.JSX.Element {
 
   // Estado de pestanas desde el main.
   useEffect(() => window.tek.onTabsState(setTabs), [setTabs])
+  useEffect(() => window.tek.onTabsFavicons((icons) => useTek.getState().setTabFavicons(icons)), [])
 
   // Perfil de quien usa TEK: el nombre del saludo y si ya vio el tutorial. Llega
   // antes de pintar Genesis, para que el saludo salga ya con el nombre. La

@@ -104,7 +104,9 @@ export function NowPlaying(): React.JSX.Element {
 export function CanvasNowPlaying(): React.JSX.Element | null {
   const now = useNow()
   const favicon = useTek((s) =>
-    s.media.now ? s.tabs.find((t) => t.id === s.media.now!.tabId)?.favicon ?? null : null
+    s.media.now
+      ? s.tabFavicons[s.tabs.find((t) => t.id === s.media.now!.tabId)?.group ?? ''] ?? null
+      : null
   )
   // Un favicon corrupto no debe pintar una imagen rota: cae a la nota. Se
   // re-intenta si el favicon cambia (p. ej. llega el bueno tras la purga).

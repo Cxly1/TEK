@@ -6,6 +6,12 @@ import type { DevServer } from '@shared/ipc'
  * `net.fetch` (el fetch de Node NO funciona con SSL interceptado por un proxy;
  * net.fetch si) y un timeout corto. Es lo que hace que la nueva
  * pestana sepa "tienes Vite corriendo en :5173".
+ *
+ * BAJO DEMANDA (2026-10): antes sondeaba 15 puertos cada 20 s SIEMPRE (45
+ * peticiones por minuto) aunque no estuvieras programando. Ahora solo mientras
+ * alguien lo necesita (`need`): la pestana nueva a la vista, o una receta que
+ * se dispara "al detectar un servidor". Sin nadie, para. Y quien pida la lista
+ * suelta (la paleta ⌘K) la recibe fresca (`fresh`).
  */
 
 /** Puertos donde suelen vivir los dev servers (Vite, Next, CRA, Django, etc.). */
@@ -26,19 +32,39 @@ export class DevRadar {
   private servers: DevServer[] = []
   private timer: NodeJS.Timeout | null = null
   private scanning = false
+  /** Quien necesita el radar encendido ahora mismo (motivos). */
+  private readonly demand = new Set<string>()
+  /** Cuando termino el ultimo escaneo (ms). */
+  private lastScanAt = 0
   /** Avisa cuando cambia el conjunto de servers (push al renderer). */
   onChange: ((servers: DevServer[]) => void) | null = null
   /** Avisa cuando APARECE un server nuevo (disparador de recetas). */
   onUp: ((port: number) => void) | null = null
 
-  start(): void {
-    if (this.timer) return
-    void this.scan()
-    this.timer = setInterval(() => void this.scan(), SCAN_EVERY_MS)
+  /**
+   * Enciende o suelta el radar por un motivo ('pestana-nueva', 'recetas'...).
+   * Escanea mientras quede alguno; al encenderse, mira ya.
+   */
+  need(reason: string, on: boolean): void {
+    if (on) this.demand.add(reason)
+    else this.demand.delete(reason)
+    if (this.demand.size > 0 && !this.timer) {
+      void this.scan()
+      this.timer = setInterval(() => void this.scan(), SCAN_EVERY_MS)
+    } else if (this.demand.size === 0 && this.timer) {
+      clearInterval(this.timer)
+      this.timer = null
+    }
   }
 
   list(): DevServer[] {
     return this.servers
+  }
+
+  /** La lista, pero si la ultima vuelta es vieja (radar parado), mira antes. */
+  async fresh(): Promise<DevServer[]> {
+    if (Date.now() - this.lastScanAt < SCAN_EVERY_MS) return this.servers
+    return this.scan()
   }
 
   /** Prueba un puerto: vivo si responde lo que sea por HTTP. */
@@ -81,12 +107,14 @@ export class DevRadar {
       return found
     } finally {
       this.scanning = false
+      this.lastScanAt = Date.now()
     }
   }
 
   dispose(): void {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
+    this.demand.clear()
     this.onChange = null
     this.onUp = null
   }

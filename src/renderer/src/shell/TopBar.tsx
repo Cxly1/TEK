@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { memo, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTek, useActiveTab } from '@/store'
 import { hostKey, prettyHost, type TabMeta } from '@shared/ipc'
 import { groupColor } from '@/lib/groupColor'
@@ -59,6 +59,95 @@ function MuteButton({ tab }: { tab: TabMeta }): React.JSX.Element {
     </span>
   )
 }
+
+/** Lo que una pestana necesita del arrastre: las manos de TopBar, siempre las mismas. */
+interface TabDrag {
+  start(e: React.DragEvent, id: string): void
+  end(): void
+  over(e: React.DragEvent, id: string): void
+  drop(e: React.DragEvent, id: string): void
+}
+
+interface TabButtonProps {
+  t: TabMeta
+  active: boolean
+  favicon: string | undefined
+  dragging: boolean
+  drop: 'before' | 'after' | null
+  drag: TabDrag
+}
+
+/**
+ * Una pestana de la barra, MEMORIZADA: solo se repinta si cambia algo de lo que
+ * ENSEÑA (titulo, icono, carga, audio, mini-player, activa, arrastre). Antes
+ * cada evento de cualquier pestana —y el contador del bloqueador, hasta 1,4
+ * veces por segundo— repintaba la barra entera.
+ */
+const TabButton = memo(
+  function TabButton({ t, active, favicon, dragging, drop, drag }: TabButtonProps): React.JSX.Element {
+    return (
+      <button
+        className={`tab ${active ? 'is-active' : ''} ${t.pip ? 'is-pip' : ''} ${
+          dragging ? 'is-dragging' : ''
+        } ${drop === 'after' ? 'drop-after' : drop === 'before' ? 'drop-before' : ''}`}
+        tabIndex={-1}
+        draggable
+        onDragStart={(e) => drag.start(e, t.id)}
+        onDragEnd={drag.end}
+        onDragOver={(e) => drag.over(e, t.id)}
+        onDrop={(e) => drag.drop(e, t.id)}
+        onClick={() => window.tek.tabs.activate(t.id)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          void window.tek.tabs.contextMenu(t.id)
+        }}
+        title={t.pip ? `${t.title} — en el mini-player` : t.title}
+      >
+        <span className="tab-lead">
+          {t.pip ? (
+            <span className="tab-pip" title="En el mini-player">
+              <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden>
+                <rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" />
+                <rect x="11.5" y="11" width="7.5" height="6" rx="1.2" fill="currentColor" />
+              </svg>
+            </span>
+          ) : t.loading ? (
+            <span className="tab-dot is-loading" />
+          ) : favicon ? (
+            <img className="tab-favicon" src={favicon} alt="" />
+          ) : (
+            <span className="tab-dot" />
+          )}
+        </span>
+        <span className="tab-title">{t.title || 'Nueva pestaña'}</span>
+        {(t.audible || t.muted) && <MuteButton tab={t} />}
+        <span
+          className="tab-close"
+          role="button"
+          aria-label="Cerrar pestaña"
+          onClick={(e) => {
+            e.stopPropagation()
+            void window.tek.tabs.close(t.id)
+          }}
+        >
+          ✕
+        </span>
+      </button>
+    )
+  },
+  (a, b) =>
+    a.active === b.active &&
+    a.favicon === b.favicon &&
+    a.dragging === b.dragging &&
+    a.drop === b.drop &&
+    a.drag === b.drag &&
+    a.t.id === b.t.id &&
+    a.t.title === b.t.title &&
+    a.t.loading === b.t.loading &&
+    !!a.t.pip === !!b.t.pip &&
+    a.t.audible === b.t.audible &&
+    a.t.muted === b.t.muted
+)
 
 /** Manda la pestana activa al mini-player (Picture-in-Picture). */
 function PipButton(): React.JSX.Element {
@@ -121,6 +210,7 @@ function ToolsButton(): React.JSX.Element {
 
 export function TopBar(): React.JSX.Element {
   const tabs = useTek((s) => s.tabs)
+  const favicons = useTek((s) => s.tabFavicons)
   const activeId = useTek((s) => s.activeId)
   const collapsed = useTek((s) => s.collapsedGroups)
   const toggleGroup = useTek((s) => s.toggleGroup)
@@ -160,6 +250,13 @@ export function TopBar(): React.JSX.Element {
   // dragId = pestana en vuelo; dropMark = donde caeria (antes/despues de esa id).
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropMark, setDropMark] = useState<{ id: string; after: boolean } | null>(null)
+  // Los manejadores del arrastre son SIEMPRE los mismos (ver `drag`): leen el
+  // estado de estas referencias en vez de cerrarlo, asi las pestanas
+  // memorizadas no se repintan cada vez que cambia la lista.
+  const tabsRef = useRef(tabs)
+  tabsRef.current = tabs
+  const dragRef = useRef(dragId)
+  dragRef.current = dragId
 
   /** Antes o despues de una pestana, segun la mitad del rect donde va el puntero. */
   const markOf = (e: React.DragEvent, id: string): { id: string; after: boolean } => {
@@ -169,85 +266,59 @@ export function TopBar(): React.JSX.Element {
   /** Traduce el marcador a "insertar antes de": despues de X = antes del siguiente. */
   const beforeIdOf = (m: { id: string; after: boolean }): string | null => {
     if (!m.after) return m.id
-    const i = tabs.findIndex((t) => t.id === m.id)
-    return tabs[i + 1]?.id ?? null
+    const list = tabsRef.current
+    const i = list.findIndex((t) => t.id === m.id)
+    return list[i + 1]?.id ?? null
   }
   const endDrag = (): void => {
     setDragId(null)
     setDropMark(null)
   }
   const dropOn = (m: { id: string; after: boolean } | null): void => {
-    if (dragId) void window.tek.tabs.move(dragId, m ? beforeIdOf(m) : null)
+    const id = dragRef.current
+    if (id) void window.tek.tabs.move(id, m ? beforeIdOf(m) : null)
     endDrag()
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const drag = useMemo<TabDrag>(
+    () => ({
+      start: (e, id) => {
+        setDragId(id)
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', id)
+      },
+      end: endDrag,
+      over: (e, id) => {
+        const cur = dragRef.current
+        if (!cur || cur === id) return
+        e.preventDefault() // sin esto el drop nunca dispara
+        e.dataTransfer.dropEffect = 'move'
+        const m = markOf(e, id)
+        // set funcional con bail-out: no re-renderiza en cada pixel del dragover.
+        setDropMark((c) => (c && c.id === m.id && c.after === m.after ? c : m))
+      },
+      drop: (e, id) => {
+        if (!dragRef.current) return
+        e.preventDefault()
+        e.stopPropagation()
+        dropOn(markOf(e, id))
+      }
+    }),
+    []
+  )
 
   const runs = toRuns(tabs)
 
   const renderTab = (t: TabMeta): React.JSX.Element => (
-    <button
+    <TabButton
       key={t.id}
-      className={`tab ${t.id === activeId ? 'is-active' : ''} ${t.pip ? 'is-pip' : ''} ${
-        t.id === dragId ? 'is-dragging' : ''
-      } ${dropMark?.id === t.id ? (dropMark.after ? 'drop-after' : 'drop-before') : ''}`}
-      tabIndex={-1}
-      draggable
-      onDragStart={(e) => {
-        setDragId(t.id)
-        e.dataTransfer.effectAllowed = 'move'
-        e.dataTransfer.setData('text/plain', t.id)
-      }}
-      onDragEnd={endDrag}
-      onDragOver={(e) => {
-        if (!dragId || dragId === t.id) return
-        e.preventDefault() // sin esto el drop nunca dispara
-        e.dataTransfer.dropEffect = 'move'
-        const m = markOf(e, t.id)
-        // set funcional con bail-out: no re-renderiza en cada pixel del dragover.
-        setDropMark((cur) => (cur && cur.id === m.id && cur.after === m.after ? cur : m))
-      }}
-      onDrop={(e) => {
-        if (!dragId) return
-        e.preventDefault()
-        e.stopPropagation()
-        dropOn(markOf(e, t.id))
-      }}
-      onClick={() => window.tek.tabs.activate(t.id)}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        void window.tek.tabs.contextMenu(t.id)
-      }}
-      title={t.pip ? `${t.title} — en el mini-player` : t.title}
-    >
-      <span className="tab-lead">
-        {t.pip ? (
-          <span className="tab-pip" title="En el mini-player">
-            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden>
-              <rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" />
-              <rect x="11.5" y="11" width="7.5" height="6" rx="1.2" fill="currentColor" />
-            </svg>
-          </span>
-        ) : t.loading ? (
-          <span className="tab-dot is-loading" />
-        ) : t.favicon ? (
-          <img className="tab-favicon" src={t.favicon} alt="" />
-        ) : (
-          <span className="tab-dot" />
-        )}
-      </span>
-      <span className="tab-title">{t.title || 'Nueva pestaña'}</span>
-      {(t.audible || t.muted) && <MuteButton tab={t} />}
-      <span
-        className="tab-close"
-        role="button"
-        aria-label="Cerrar pestaña"
-        onClick={(e) => {
-          e.stopPropagation()
-          void window.tek.tabs.close(t.id)
-        }}
-      >
-        ✕
-      </span>
-    </button>
+      t={t}
+      active={t.id === activeId}
+      favicon={t.blank ? undefined : favicons[t.group]}
+      dragging={t.id === dragId}
+      drop={dropMark?.id === t.id ? (dropMark.after ? 'after' : 'before') : null}
+      drag={drag}
+    />
   )
 
   return (
