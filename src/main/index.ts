@@ -197,6 +197,11 @@ function createWindow(): void {
 
   views = new ViewManager(mainWindow, brain!, adblock!, favicons!, loadPipChrome)
   views.setChromeBackground(THEMES[appearance?.get() ?? 'noche'].elevated)
+  // Enlaces que abren otra app (mailto:, tel:...): siempre con pregunta (ver
+  // Permissions.openExternalFor). Y lo que TEK descarga por su cuenta ("Guardar
+  // imagen") cuenta como clic tuyo para el gestor de descargas.
+  views.openExternal = (wc, url) => void permissions?.openExternalFor(wc, url)
+  views.onExpectDownload = (url) => downloads?.expect(url)
   wireAutomation(views)
 
   // Menu ☰, Descargas e Historial: su propia capa nativa, transparente, encima
@@ -664,11 +669,11 @@ function registerIpc(): void {
   handleTek(IPC.pwFill, (e, tabId: string, credId: string) => {
     if (!fromShell(e) || !views || !passwords) return false
     const wc = views.wcOfTab(tabId)
-    const cred = passwords.credFor(credId)
-    if (!wc || !cred) return false
-    // El host se verifica EN EL MOMENTO de rellenar: si la pestana ya navego a
-    // otro sitio, no se manda nada.
-    if (hostKey(wc.getURL()) !== cred.host) return false
+    if (!wc) return false
+    // El ORIGEN se verifica EN EL MOMENTO de rellenar (credFor): si la pestana
+    // ya navego a otro sitio, o es la version http del mismo, no sale nada.
+    const cred = passwords.credFor(credId, wc.getURL())
+    if (!cred) return false
     wc.send(WV.pwFillCreds, { username: cred.username, password: cred.password })
     return true
   })
@@ -686,8 +691,10 @@ function registerIpc(): void {
 
   // Permisos de sitio (solo el shell consulta/revoca)
   handleTek(IPC.permsList, (e) => (fromShell(e) ? permissions?.list() ?? [] : []))
-  handleTek(IPC.permsRevoke, (e, host: string, permission: string) => {
-    if (fromShell(e)) permissions?.revoke(host, permission)
+  handleTek(IPC.permsRevoke, (e, origin: string, permission: string) => {
+    if (fromShell(e) && typeof origin === 'string' && typeof permission === 'string') {
+      permissions?.revoke(origin, permission)
+    }
   })
 
   // Privacidad: borrar datos de navegacion (solo el shell; acciones destructivas)
@@ -708,9 +715,9 @@ function registerIpc(): void {
     if (!views || !passwords || e.sender.isDestroyed()) return
     const tabId = views.tabIdOfWcId(e.sender.id)
     if (!tabId) return
-    const host = hostKey(e.sender.getURL())
-    const creds = present === true && !passwords.status().locked ? passwords.metasFor(host) : []
-    sendToShell(IPC.pwFillAvailable, { tabId, host, creds })
+    const url = e.sender.getURL()
+    const creds = present === true && !passwords.status().locked ? passwords.metasFor(url) : []
+    sendToShell(IPC.pwFillAvailable, { tabId, host: hostKey(url), creds })
   })
   onPage(WV.macroEvent, (e, step: unknown) => macros?.handleEvent(e.sender, step))
   // Metadatos de MediaSession de una pagina (titulo/artista/caratula del chip).
@@ -807,6 +814,7 @@ app.whenReady().then(async () => {
   favicons = new Favicons()
   void favicons.init() // carga la cache de iconos de disco
   downloads = new Downloads(PARTITION)
+  downloads.getWindow = () => mainWindow
   void downloads.init() // carga el historial de descargas de disco
 
   // Automatizacion + dev.

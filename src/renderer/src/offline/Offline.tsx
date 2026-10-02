@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
-import { prettyHost, hostKey, type OfflineInfo } from '@shared/ipc'
+import { prettyHost, hostKey, RENDERER_GONE, type OfflineInfo } from '@shared/ipc'
 import { useTek } from '@/store'
 import './offline.css'
 
@@ -16,6 +16,8 @@ import './offline.css'
 /** El motivo del fallo, en un idioma que se entiende. */
 function explicar(code: number): string {
   switch (code) {
+    case RENDERER_GONE:
+      return 'Se quedó sin memoria o falló por dentro. Reintentar la vuelve a abrir.'
     case -106:
       return 'No hay conexión. Mira el WiFi o el cable.'
     case -105:
@@ -89,7 +91,15 @@ export function Offline({ info }: { info: OfflineInfo }): React.JSX.Element {
       <div className="off-centro">
         <h1 className="off-titulo">SIN SEÑAL</h1>
         <p className="off-host">
-          no se pudo llegar a <b>{prettyHost(host) || info.url}</b>
+          {info.code === RENDERER_GONE ? (
+            <>
+              la página de <b>{prettyHost(host) || info.url}</b> se cerró de golpe
+            </>
+          ) : (
+            <>
+              no se pudo llegar a <b>{prettyHost(host) || info.url}</b>
+            </>
+          )}
         </p>
         <p className="off-razon">{explicar(info.code)}</p>
 

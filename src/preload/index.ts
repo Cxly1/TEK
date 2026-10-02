@@ -179,7 +179,7 @@ const api: TekApi = {
   },
   perms: {
     list: () => ipcRenderer.invoke(IPC.permsList),
-    revoke: (host, permission) => ipcRenderer.invoke(IPC.permsRevoke, host, permission)
+    revoke: (origin, permission) => ipcRenderer.invoke(IPC.permsRevoke, origin, permission)
   },
   privacy: {
     clear: (scope) => ipcRenderer.invoke(IPC.privacyClear, scope),

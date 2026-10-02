@@ -1,6 +1,15 @@
 import { safeStorage } from 'electron'
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync } from 'node:crypto'
-import { hostKey, type PasswordMeta, type PasswordOffer, type PwDecision, type PwStatus } from '@shared/ipc'
+import {
+  hostKey,
+  isLoopbackHost,
+  isSecureOrigin,
+  originKey,
+  type PasswordMeta,
+  type PasswordOffer,
+  type PwDecision,
+  type PwStatus
+} from '@shared/ipc'
 import { JsonStore } from './dev/jsonStore'
 
 /**
@@ -21,13 +30,23 @@ import { JsonStore } from './dev/jsonStore'
  *    pasar por otra).
  *  - La oferta de guardado que ve el renderer NO lleva la contrasena: esta espera
  *    en memoria del main (con caducidad) hasta que el usuario decide.
- *  - El relleno es por HOST EXACTO y solo tras un clic del usuario en la UI de
- *    TEK (nada de autofill silencioso que un XSS pueda cosechar).
+ *  - El relleno es por ORIGEN EXACTO (esquema + host) y solo tras un clic del
+ *    usuario en la UI de TEK (nada de autofill silencioso que un XSS pueda
+ *    cosechar). Una credencial de `https://sitio` NO se ofrece en
+ *    `http://sitio`, que en una red publica puede falsear cualquiera.
+ *  - NUNCA en http: ni se ofrece guardar ni se rellena en una pagina sin
+ *    cifrar, salvo en tu propio equipo (localhost, servidores de desarrollo).
  */
 
 interface VaultEntry {
   id: string
+  /** Lo que se ensena (y la clave de "nunca para este sitio"). */
   host: string
+  /**
+   * Donde vale: `https://github.com` (ver originKey). Las entradas de antes
+   * (solo host) se migran a https, o a http si el host es tu equipo.
+   */
+  origin: string
   username: string
   /** Contrasena cifrada. Con `v2:` delante = lleva ademas la capa maestra. */
   secret: string
@@ -61,6 +80,7 @@ interface VaultData {
 
 interface PendingOffer {
   host: string
+  origin: string
   username: string
   password: string
   expiresAt: number
@@ -89,6 +109,19 @@ export class Passwords {
   private lockTimer: NodeJS.Timeout | null = null
   /** El renderer muestra el toast "¿guardar contraseña?". */
   onOffer: ((o: PasswordOffer) => void) | null = null
+
+  constructor() {
+    // Bovedas de hasta v0.5: las entradas solo tenian host. Se quedan validas
+    // en https (o en http si son de tu equipo, p. ej. localhost:3000).
+    let changed = false
+    for (const e of this.store.data.entries) {
+      if (!e.origin) {
+        e.origin = `${isLoopbackHost(e.host) ? 'http' : 'https'}://${e.host}`
+        changed = true
+      }
+    }
+    if (changed) this.store.flush()
+  }
 
   available(): boolean {
     try {
@@ -124,11 +157,15 @@ export class Passwords {
       .sort((a, b) => a.host.localeCompare(b.host))
   }
 
-  /** Credenciales (solo id+usuario) para un host EXACTO. */
-  metasFor(host: string): { id: string; username: string }[] {
-    if (!host) return []
+  /**
+   * Credenciales (solo id+usuario) para la pagina en `url`: mismo ORIGEN exacto
+   * y solo si es seguro (https, o http en tu equipo).
+   */
+  metasFor(url: string): { id: string; username: string }[] {
+    const origin = originKey(url)
+    if (!origin || !isSecureOrigin(origin)) return []
     return this.store.data.entries
-      .filter((e) => e.host === host)
+      .filter((e) => e.origin === origin)
       .map((e) => ({ id: e.id, username: e.username }))
   }
 
@@ -325,15 +362,21 @@ export class Passwords {
     return this.decrypt(e.secret)
   }
 
-  /** Credencial completa para rellenar. El que llama DEBE verificar el host. */
-  credFor(id: string): { host: string; username: string; password: string } | null {
+  /**
+   * Credencial completa para rellenar la pagina en `url`. Solo si la pagina
+   * tiene EXACTAMENTE su origen y es segura: la comprobacion vive aqui, en el
+   * momento de rellenar (si la pestana ya navego a otro sitio, no sale nada).
+   */
+  credFor(id: string, url: string): { username: string; password: string } | null {
     if (this.isLocked()) return null
     const e = this.store.data.entries.find((x) => x.id === id)
     if (!e) return null
+    const origin = originKey(url)
+    if (!origin || origin !== e.origin || !isSecureOrigin(origin)) return null
     const password = this.decrypt(e.secret)
     if (password === null) return null
     this.touch()
-    return { host: e.host, username: e.username, password }
+    return { username: e.username, password }
   }
 
   remove(id: string): void {
@@ -355,28 +398,33 @@ export class Passwords {
     // Bloqueada: ni ofrecemos, porque no podriamos guardar aunque dijera que si.
     if (!this.available() || this.isLocked() || !raw || typeof raw !== 'object') return
     if (sender.isDestroyed()) return
-    const host = hostKey(sender.getURL())
-    if (!host || this.store.data.never.includes(host)) return
+    const url = sender.getURL()
+    const host = hostKey(url)
+    const origin = originKey(url)
+    // En una pagina sin cifrar (http fuera de tu equipo) ni se ofrece guardar:
+    // lo que se escribe ahi lo puede leer cualquiera en la red.
+    if (!host || !origin || !isSecureOrigin(origin)) return
+    if (this.store.data.never.includes(host)) return
 
     const data = raw as Record<string, unknown>
     const username = String(data.username ?? '').slice(0, 200)
     const password = String(data.password ?? '').slice(0, 500)
     if (!password) return
 
-    const existing = this.store.data.entries.find((e) => e.host === host && e.username === username)
+    const existing = this.store.data.entries.find((e) => e.origin === origin && e.username === username)
     // Ya esta guardada tal cual: nada que ofrecer.
     if (existing && this.decrypt(existing.secret) === password) return
 
     this.gcPending()
     // Misma oferta ya en vuelo (paginas que disparan submit dos veces): ignora.
     for (const p of this.pending.values()) {
-      if (p.host === host && p.username === username && p.password === password) return
+      if (p.origin === origin && p.username === username && p.password === password) return
     }
     // Tope duro: una pagina hostil no puede inflar la memoria a base de ofertas.
     if (this.pending.size >= 10) return
 
     const offerId = randomUUID()
-    this.pending.set(offerId, { host, username, password, expiresAt: Date.now() + OFFER_TTL_MS })
+    this.pending.set(offerId, { host, origin, username, password, expiresAt: Date.now() + OFFER_TTL_MS })
     this.onOffer?.({ offerId, host, username, update: !!existing })
   }
 
@@ -396,7 +444,7 @@ export class Passwords {
     const secret = this.encrypt(offer.password)
     if (secret === null) return // sin cifrado del sistema no se guarda nada
     const existing = this.store.data.entries.find(
-      (e) => e.host === offer.host && e.username === offer.username
+      (e) => e.origin === offer.origin && e.username === offer.username
     )
     if (existing) {
       existing.secret = secret
@@ -405,6 +453,7 @@ export class Passwords {
       this.store.data.entries.push({
         id: randomUUID(),
         host: offer.host,
+        origin: offer.origin,
         username: offer.username,
         secret,
         createdAt: Date.now(),

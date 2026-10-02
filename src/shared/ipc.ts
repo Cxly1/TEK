@@ -651,10 +651,16 @@ export interface BridgeStatus {
 
 // --- Permisos de sitio ---------------------------------------------------------
 
-/** Una decision recordada: este host tiene este permiso concedido o bloqueado. */
+/** Una decision recordada: este ORIGEN tiene este permiso concedido o bloqueado. */
 export interface SitePermission {
+  /** Clave de la decision: `https://meet.google.com` (ver originKey). */
+  origin: string
+  /** Lo que se pinta: el host, o el origen entero si no es https. */
   host: string
-  /** Nombre del permiso ('media', 'geolocation', 'notifications', ...). */
+  /**
+   * Nombre del permiso ('media', 'geolocation', 'notifications', ...) o
+   * `external:<esquema>` para "abrir enlaces mailto:/tel:/... en otra app".
+   */
   permission: string
   allowed: boolean
 }
@@ -1090,7 +1096,8 @@ export interface TekApi {
   /** Permisos de sitio recordados (camara, micro, ubicacion, notificaciones...). */
   perms: {
     list(): Promise<SitePermission[]>
-    revoke(host: string, permission: string): Promise<void>
+    /** Olvida una decision (el sitio volvera a preguntar). */
+    revoke(origin: string, permission: string): Promise<void>
   }
   /** Datos de navegacion de Chromium (cookies, cache, storage): borrarlos. */
   privacy: {
@@ -1233,6 +1240,44 @@ export function hostKey(url: string): string {
     return ''
   }
 }
+
+/**
+ * Origen "limpio": esquema + host sin www (+ puerto). '' si no es http(s).
+ * Es la clave de contrasenas y permisos: `https://ejemplo.com` y
+ * `http://ejemplo.com` son sitios DISTINTOS (el segundo lo puede falsear
+ * cualquiera en una red publica), aunque el host sea el mismo.
+ */
+export function originKey(url: string): string {
+  try {
+    const u = new URL(url)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return ''
+    return `${u.protocol}//${u.host.replace(/^www\./, '')}`
+  } catch {
+    return ''
+  }
+}
+
+/** ¿El host (con o sin puerto) es tu propio equipo? localhost, 127.x, [::1]. */
+export function isLoopbackHost(host: string): boolean {
+  const h = (host || '').toLowerCase().replace(/:\d+$/, '').replace(/^\[|\]$/g, '')
+  return h === 'localhost' || h.endsWith('.localhost') || /^127\.\d+\.\d+\.\d+$/.test(h) || h === '::1'
+}
+
+/**
+ * ¿Origen seguro para datos sensibles (rellenar contrasenas)? https, o http en
+ * tu propio equipo (los servidores de desarrollo van por http).
+ */
+export function isSecureOrigin(origin: string): boolean {
+  if (origin.startsWith('https://')) return true
+  return origin.startsWith('http://') && isLoopbackHost(origin.slice('http://'.length))
+}
+
+/**
+ * Codigo de "la pagina se cerro de golpe" (su proceso murio: memoria, fallo).
+ * Va en OfflineInfo.code para que el shell pinte su pantalla en vez de una
+ * pestana en blanco. Fuera del rango de los codigos de red de Chromium.
+ */
+export const RENDERER_GONE = -9001
 
 /** Normaliza lo que el usuario teclea en el ⌘K a una URL navegable o una busqueda. */
 export function toNavigableUrl(input: string): string {

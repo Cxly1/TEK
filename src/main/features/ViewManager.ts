@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import {
   IPC,
+  RENDERER_GONE,
   TOPBAR_HEIGHT,
   WV,
   hostKey,
@@ -207,6 +208,14 @@ export class ViewManager {
   onAudibleStart: ((tabId: string) => void) | null = null
   /** ¿Abrir DevTools solas al navegar a este host? (ajuste localhost). */
   shouldAutoDevtools: ((host: string) => boolean) | null = null
+  /**
+   * Una pagina quiere abrir otra app (mailto:, tel:...). Lo resuelve
+   * Permissions.openExternalFor: pregunta antes, con freno anti-spam. Nunca se
+   * llama a shell.openExternal directo desde una pagina.
+   */
+  openExternal: ((wc: Electron.WebContents, url: string) => void) | null = null
+  /** TEK va a pedir una descarga por su cuenta ("Guardar imagen"): cuenta como clic. */
+  onExpectDownload: ((url: string) => void) | null = null
   /**
    * Tras reordenar las vistas: la capa flotante (menu ☰, Descargas, Historial)
    * vuelve al tope (FloatingLayer). Devuelve true si esta a la vista: entonces
@@ -432,7 +441,7 @@ export class ViewManager {
       // conocidos (mailto:/tel:/…) los abre la app del sistema, como un navegador.
       if (!/^https?:\/\//i.test(url) && url !== 'about:blank') {
         e.preventDefault()
-        if (/^(mailto|tel|sms|webcal|magnet):/i.test(url)) void shell.openExternal(url)
+        this.openExternal?.(wc, url)
         return
       }
       this.applyUaFor(wc, url)
@@ -496,6 +505,28 @@ export class ViewManager {
       // La pestana se agrupa por el sitio al que INTENTABAS ir: sin esto se
       // quedaria con el grupo de la pagina anterior (o sin ninguno).
       tab.group = hostKey(validatedURL)
+      this.applyVisibility()
+      this.emit()
+    })
+    // El proceso de la pagina murio (sin memoria, fallo, lo mato Windows...).
+    // Sin esto la pestana se quedaba EN BLANCO para siempre, sin decir nada.
+    // Ahora sale la misma pantalla que cuando no hay red, con su Reintentar
+    // (que vuelve a cargar con un proceso nuevo). Nada se recarga solo: una
+    // pagina que tumba su proceso al cargar entraria en bucle.
+    wc.on('render-process-gone', (_e, details) => {
+      if (details.reason === 'clean-exit' || tab.blank) return
+      const url = wc.isDestroyed() ? '' : wc.getURL()
+      if (!/^https?:\/\//i.test(url)) return
+      // Si estaba en el mini-player, vuelve a su pestana: alli se ve el aviso.
+      if (this.mini.tabId === tab.id) this.exitPip(false)
+      if (tab.audibleOffTimer) clearTimeout(tab.audibleOffTimer)
+      tab.audibleOffTimer = null
+      tab.audible = false
+      tab.offline = {
+        url,
+        code: RENDERER_GONE,
+        desc: `RENDERER_${details.reason.toUpperCase().replace(/-/g, '_')}`
+      }
       this.applyVisibility()
       this.emit()
     })
@@ -598,7 +629,9 @@ export class ViewManager {
       }
       // Links target=_blank / ctrl+click -> pestana de TEK (cae en su grupo).
       // Solo esquemas web: nada de file:// ni protocolos raros desde una pagina.
+      // Un mailto:/tel:... abierto en ventana nueva pasa por la misma pregunta.
       if (/^https?:\/\//i.test(url)) this.create(url)
+      else this.openExternal?.(wc, url)
       return { action: 'deny' }
     })
   }
@@ -616,7 +649,7 @@ export class ViewManager {
     cwc.on('will-navigate', (e, url) => {
       if (!/^https?:\/\//i.test(url) && url !== 'about:blank') {
         e.preventDefault()
-        if (/^(mailto|tel|sms|webcal|magnet):/i.test(url)) void shell.openExternal(url)
+        this.openExternal?.(cwc, url)
       }
     })
     cwc.setWindowOpenHandler(({ url, disposition, features }) => {
@@ -642,6 +675,7 @@ export class ViewManager {
         }
       }
       if (/^https?:\/\//i.test(url)) this.create(url)
+      else this.openExternal?.(cwc, url)
       return { action: 'deny' }
     })
     cwc.on('did-create-window', (grandchild) => this.hardenPopup(grandchild))
@@ -1371,7 +1405,13 @@ export class ViewManager {
     if (mediaType === 'image' && srcURL) {
       items.push(
         { label: 'Abrir imagen en pestaña nueva', click: () => this.create(srcURL) },
-        { label: 'Guardar imagen', click: () => wc.downloadURL(srcURL) },
+        {
+          label: 'Guardar imagen',
+          click: () => {
+            this.onExpectDownload?.(srcURL)
+            wc.downloadURL(srcURL)
+          }
+        },
         { label: 'Copiar dirección de la imagen', click: () => clipboard.writeText(srcURL) },
         { type: 'separator' }
       )

@@ -808,7 +808,12 @@ const PERM_LABEL: Record<string, string> = {
   midiSysex: 'MIDI (sysex)',
   openExternal: 'abrir apps externas',
   fileSystem: 'acceso a archivos',
-  'idle-detection': 'detección de inactividad'
+  'idle-detection': 'detección de inactividad',
+  'external:mailto': 'abrir tu correo',
+  'external:tel': 'abrir llamadas',
+  'external:sms': 'abrir mensajes',
+  'external:webcal': 'abrir tu calendario',
+  'external:magnet': 'abrir torrents'
 }
 
 function SettingsSec(): React.JSX.Element {
@@ -825,7 +830,7 @@ function SettingsSec(): React.JSX.Element {
   useEffect(refresh, [])
 
   const revoke = async (p: SitePermission): Promise<void> => {
-    await window.tek.perms.revoke(p.host, p.permission)
+    await window.tek.perms.revoke(p.origin, p.permission)
     refresh()
   }
 
@@ -899,7 +904,7 @@ function SettingsSec(): React.JSX.Element {
         ) : (
           <ul className="brain-list">
             {perms.map((p) => (
-              <li key={`${p.host}|${p.permission}`}>
+              <li key={`${p.origin}|${p.permission}`}>
                 <span className="brain-eq">{p.allowed ? '✓' : '✕'}</span>
                 <span className="brain-host">
                   {p.host}
