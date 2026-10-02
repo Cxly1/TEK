@@ -54,6 +54,17 @@ const avisar = (por) => {
   )
 }
 
+// Desde Electron 42 el paquete ya NO se baja el binario al instalar (pnpm
+// install deja node_modules/electron sin dist/ y `pnpm dev` muere con "Electron
+// failed to install correctly"). Se pide aqui; su install.js es idempotente (si
+// la version ya esta, no hace nada). Detras de un proxy que intercepta SSL hace
+// falta NODE_OPTIONS=--use-system-ca la primera vez.
+const INSTALL = join(DIST, '..', 'install.js')
+if (!existsSync(EXE) && existsSync(INSTALL)) {
+  const r = spawnSync(process.execPath, [INSTALL], { stdio: 'inherit' })
+  if (r.status !== 0) console.warn('  ⚠ no se pudo bajar el binario de Electron (¿sin red? prueba con NODE_OPTIONS=--use-system-ca)')
+}
+
 // El DRM de castlabs con VMP en Windows es lo unico que TEK empaqueta.
 if (process.platform !== 'win32' || !existsSync(EXE)) process.exit(0)
 

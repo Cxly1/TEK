@@ -1610,7 +1610,7 @@ export class ViewManager {
     if (linkURL) {
       items.push(
         { label: 'Abrir enlace en pestaña nueva', click: () => this.create(linkURL) },
-        { label: 'Copiar enlace', click: () => clipboard.writeText(linkURL) },
+        { label: 'Copiar enlace', click: () => void clipboard.writeText(linkURL) },
         { type: 'separator' }
       )
     }
@@ -1624,7 +1624,7 @@ export class ViewManager {
             wc.downloadURL(srcURL)
           }
         },
-        { label: 'Copiar dirección de la imagen', click: () => clipboard.writeText(srcURL) },
+        { label: 'Copiar dirección de la imagen', click: () => void clipboard.writeText(srcURL) },
         { type: 'separator' }
       )
     }
@@ -1663,7 +1663,7 @@ export class ViewManager {
       },
       { label: 'Recargar', click: () => wc.reload() },
       { type: 'separator' },
-      { label: 'Copiar dirección de la página', click: () => clipboard.writeText(wc.getURL()) },
+      { label: 'Copiar dirección de la página', click: () => void clipboard.writeText(wc.getURL()) },
       { label: 'Copiar como cURL', click: () => void this.copyAsCurl(wc) },
       { label: 'Captura de página completa', click: () => void this.captureFullPage(wc) },
       { label: 'Inspeccionar elemento', click: () => wc.inspectElement(x, y) }
@@ -1687,7 +1687,7 @@ export class ViewManager {
       /* sin cookies disponibles: el curl va igual */
     }
     parts.push('--compressed')
-    clipboard.writeText(parts.join(' \\\n  '))
+    void clipboard.writeText(parts.join(' \\\n  '))
   }
 
   /**
