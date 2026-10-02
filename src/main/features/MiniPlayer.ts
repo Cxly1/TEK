@@ -2,6 +2,7 @@ import { WebContentsView, BrowserWindow, screen, type View } from 'electron'
 import { join } from 'node:path'
 import { IPC, TOPBAR_HEIGHT, type PipMode, type PipState } from '@shared/ipc'
 import { JsonStore } from './dev/jsonStore'
+import { lockToApp, registerSurface } from '../ipcGuard'
 
 /** Lo que la barra del mini necesita mostrar (titulo + host + favicon del sitio). */
 export interface PipMeta {
@@ -378,9 +379,14 @@ export class MiniPlayer {
       webPreferences: {
         preload: join(import.meta.dirname, '../preload/index.cjs'),
         sandbox: true,
-        contextIsolation: true
+        contextIsolation: true,
+        navigateOnDragDrop: false
       }
     })
+    // La barra es UI de TEK: usa su API (ipcGuard) y no navega a nada mas, ni
+    // abre ventanas.
+    registerSurface(chrome.webContents)
+    lockToApp(chrome.webContents, { denyWindows: true })
     chrome.setBackgroundColor(this.bg)
     this.chrome = chrome
     this.win.contentView.addChildView(chrome)

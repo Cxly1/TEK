@@ -2,9 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, safeStorage } from 'electron'
+import { app } from 'electron'
 import type { BridgeStatus, SnippetResult } from '@shared/ipc'
-import { JsonStore } from './jsonStore'
 
 /**
  * Puente para agentes: un servidor HTTP MINUSCULO que permite a Claude Code (u
@@ -19,18 +18,12 @@ import { JsonStore } from './jsonStore'
  *    CORS… y aqui no hay CORS: el preflight muere y la peticion nunca llega.
  *  - Verifica el header Host (anti DNS-rebinding: un dominio malicioso que
  *    resuelva a 127.0.0.1 llegaria con Host ajeno y se rechaza).
- *  - El token se guarda CIFRADO (safeStorage/DPAPI) en tek-bridge.json: en reposo
- *    no hay nada reutilizable si copian tu disco o un backup. El token EN CLARO y
- *    el puerto solo existen en tek-bridge-runtime.json MIENTRAS el puente corre
- *    (para que las CLI locales lo descubran); ese archivo se BORRA al apagarlo.
- *    Si el sistema no ofrece cifrado, el token vive solo en memoria esta sesion
- *    (se regenera al reiniciar) — nunca en claro permanente en disco.
+ *  - El token es NUEVO en cada arranque de TEK y solo vive en memoria. Las CLI
+ *    locales lo descubren en tek-bridge-runtime.json, que existe MIENTRAS el
+ *    puente corre y se borra al apagarlo — y tambien al arrancar, por si TEK se
+ *    cerro de golpe y quedo uno viejo. Antes el token era fijo por instalacion:
+ *    un runtime.json huerfano (cierre a mitad) servia para siempre.
  */
-
-interface BridgeData {
-  /** Token cifrado con safeStorage (DPAPI), en base64. '' si aun no hay. */
-  secret: string
-}
 
 export interface BridgeDeps {
   listTabs(): { id: string; title: string; url: string; active: boolean }[]
@@ -82,43 +75,23 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export class AgentBridge {
-  private readonly store = new JsonStore<BridgeData>('tek-bridge.json', { secret: '' })
   /** Archivo efimero con token+puerto en claro para auto-discovery; solo mientras corre. */
   private readonly runtimeFile = join(app.getPath('userData'), 'tek-bridge-runtime.json')
   private server: Server | null = null
   private port = 0
   private deps: BridgeDeps | null = null
-  /** Token en claro: SOLO en memoria (en disco va cifrado). */
-  private token = ''
+  /** Token de ESTA sesion de TEK: solo en memoria, se regenera en cada arranque. */
+  private readonly token = randomBytes(24).toString('base64url')
 
   constructor() {
-    // Token estable por instalacion: descifra el guardado o genera uno nuevo.
-    const stored = this.store.data.secret
-    if (stored) {
-      try {
-        if (safeStorage.isEncryptionAvailable()) {
-          this.token = safeStorage.decryptString(Buffer.from(stored, 'base64'))
-        }
-      } catch {
-        this.token = '' // secreto corrupto / cuenta distinta: regeneramos
-      }
-    }
-    if (!this.token) {
-      this.token = randomBytes(24).toString('base64url')
-      this.persistToken()
-    }
-  }
-
-  /** Guarda el token CIFRADO. Sin cifrado del sistema no se persiste (vive en memoria). */
-  private persistToken(): void {
+    // Un runtime.json que sobrevivio a un cierre brusco ya no vale para nada
+    // (su token murio con esa sesion): fuera. Y el tek-bridge.json de versiones
+    // anteriores (token fijo, cifrado) tampoco se usa ya.
+    this.clearRuntime()
     try {
-      if (!safeStorage.isEncryptionAvailable()) return
-      // Reemplaza el objeto entero: descarta cualquier {token,port} en claro de un
-      // tek-bridge.json de una version anterior (migracion limpia).
-      this.store.data = { secret: safeStorage.encryptString(this.token).toString('base64') }
-      this.store.flush()
+      rmSync(join(app.getPath('userData'), 'tek-bridge.json'), { force: true })
     } catch {
-      /* sin cifrado disponible: el token vive solo esta sesion */
+      /* no estaba, o no se pudo: no guarda nada que sirva ya */
     }
   }
 
@@ -283,6 +256,5 @@ export class AgentBridge {
   dispose(): void {
     this.stop()
     this.deps = null
-    this.store.dispose()
   }
 }

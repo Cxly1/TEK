@@ -875,7 +875,8 @@ function SettingsSec(): React.JSX.Element {
         </div>
         <p className="brain-note">
           HTTP local (solo 127.0.0.1, con token) para que Claude Code maneje TEK: pestañas,
-          navegar, ejecutar JS, screenshot y texto de la página. Apagado por defecto.
+          navegar, ejecutar JS, screenshot y texto de la página. Apagado por defecto. El
+          token cambia cada vez que abres TEK; los agentes lo leen de tek-bridge-runtime.json.
         </p>
         {bridge?.enabled && bridge.running && (
           <div className="auto-token" style={{ marginTop: 10 }}>

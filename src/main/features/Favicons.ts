@@ -1,6 +1,41 @@
 import { app, net } from 'electron'
 import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
+import { isIP } from 'node:net'
+
+/**
+ * ¿Este host es de tu red (loopback, LAN, link-local, nombres sin dominio)?
+ * Lo pide el PROCESO PRINCIPAL, no la pagina: sin este filtro, cualquier web
+ * podia declarar como favicon `http://192.168.1.1/...` y TEK iba a buscarlo a
+ * tu router. Una IP publica que resuelva a la LAN (DNS rebinding) se escapa de
+ * esta comprobacion; para eso ademas se mira la URL final tras las redirecciones.
+ */
+export function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (!h) return true
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local')) return true
+  const kind = isIP(h)
+  if (kind === 4) {
+    const [a, b] = h.split('.').map(Number)
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) || // CGNAT
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168)
+    )
+  }
+  if (kind === 6) {
+    if (h === '::' || h === '::1') return true
+    if (/^f[cd]/.test(h) || /^fe[89ab]/.test(h)) return true // ULA y link-local
+    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(h)
+    return mapped ? isPrivateHost(mapped[1]) : false
+  }
+  // Un nombre sin punto ("router", "nas") solo existe en tu red.
+  return !h.includes('.')
+}
 
 /**
  * Cache local de favicons por host, para que la pantalla de nueva pestana (los
@@ -97,10 +132,25 @@ export class Favicons {
     await this.fetchInto(host, `https://${host}/favicon.ico`)
   }
 
+  /**
+   * ¿Se puede pedir este icono? Solo web (una pagina podria declarar un favicon
+   * file:// y hacernos leer un archivo local), y a tu red solo si la propia
+   * pagina vive ahi (el icono de tu localhost:5173 si; el de tu router desde
+   * una web cualquiera, no).
+   */
+  private allowedTarget(host: string, url: string): boolean {
+    let u: URL
+    try {
+      u = new URL(url)
+    } catch {
+      return false
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+    return !isPrivateHost(u.hostname) || this.norm(u.host) === host
+  }
+
   private async fetchInto(host: string, url: string): Promise<void> {
-    // Solo iconos web: una pagina maliciosa podria declarar un favicon file://
-    // y hacernos leer (y cachear) un archivo local.
-    if (!/^https?:\/\//i.test(url)) return
+    if (!this.allowedTarget(host, url)) return
     if (this.map.has(host) || this.inflight.has(host)) return
     this.inflight.add(host)
     try {
@@ -108,6 +158,8 @@ export class Favicons {
       // host en `inflight`) colgados para siempre.
       const res = await net.fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(10_000) })
       if (!res.ok) return
+      // Una redireccion que acabo en tu red no se cachea (ver isPrivateHost).
+      if (res.url && !this.allowedTarget(host, res.url)) return
       // Corta ANTES de descargar si el servidor ya declara un tamano absurdo.
       const declared = Number(res.headers.get('content-length') ?? 0)
       if (declared > 200_000) return

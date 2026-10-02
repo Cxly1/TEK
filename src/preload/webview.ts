@@ -694,6 +694,20 @@ void ipcRenderer
   })
   .catch(() => undefined)
 
+/**
+ * ¿Es un campo cuyo valor no debe salir de la pagina? Contrasenas, datos de
+ * tarjeta y codigos de un solo uso: por el tipo, por el `autocomplete` que el
+ * propio sitio declara, o por como se llama el campo.
+ */
+const SENSITIVE_AUTOCOMPLETE = /\b(cc-[a-z-]+|one-time-code|current-password|new-password)\b/i
+const SENSITIVE_NAME = /(passw|contrase|clave|card|tarjeta|cvv|cvc|cvn|csc|ccnum|cc-?num|otp|one.?time|2fa|totp|\bpin\b|\bnip\b)/i
+function isSensitiveField(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): boolean {
+  if (el instanceof HTMLInputElement && el.type === 'password') return true
+  const ac = el.getAttribute('autocomplete') ?? ''
+  if (SENSITIVE_AUTOCOMPLETE.test(ac)) return true
+  return SENSITIVE_NAME.test(`${el.name} ${el.id}`)
+}
+
 /** Selector razonablemente robusto: id > name/testid > ruta nth-of-type. */
 function selectorOf(el: Element): string {
   if (el.id) {
@@ -753,9 +767,9 @@ document.addEventListener(
     const isField =
       t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement
     if (!isField) return
-    // SEGURIDAD: el valor de un campo de contrasena JAMAS se graba en una macro
-    // (acabaria en texto plano en el JSON de macros).
-    if (t instanceof HTMLInputElement && t.type === 'password') return
+    // SEGURIDAD: contrasenas, tarjetas y codigos de un solo uso JAMAS se graban
+    // en una macro (lo demas se guarda cifrado, pero esto ni eso).
+    if (isSensitiveField(t)) return
     ipcRenderer.send(MACRO_EVENT, { type: 'input', selector: selectorOf(t), value: t.value })
   },
   true

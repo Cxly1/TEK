@@ -3,7 +3,6 @@ import {
   BrowserWindow,
   components,
   desktopCapturer,
-  ipcMain,
   session,
   shell,
   webContents,
@@ -52,8 +51,28 @@ import { Scripts, evalInPage } from './features/dev/Scripts'
 import { Watchers } from './features/dev/Watchers'
 import { Macros } from './features/dev/Macros'
 import { AgentBridge } from './features/dev/AgentBridge'
+import {
+  fromTek,
+  handlePage,
+  handleTek,
+  initAppUrl,
+  isSurface,
+  lockToApp,
+  onPage,
+  onPageSync,
+  onTek,
+  onTekSync,
+  registerSurface
+} from './ipcGuard'
 
 const isDev = !app.isPackaged
+
+// La UI de TEK vive en UN sitio (dev server o el index.html empaquetado): el
+// guard de IPC y el candado de navegacion comparan contra esa URL exacta.
+initAppUrl(
+  isDev ? process.env['ELECTRON_RENDERER_URL'] : undefined,
+  join(import.meta.dirname, '../renderer/index.html')
+)
 
 /** Misma particion persistente que usan las pestanas (ViewManager). */
 const PARTITION = 'persist:tek'
@@ -96,23 +115,13 @@ function sendToShell(channel: string, payload: unknown): void {
 }
 
 /**
- * Guardia de canales sensibles: solo el renderer del SHELL (la UI de TEK) puede
- * invocarlos. Los preload de las paginas tambien tienen ipcRenderer; aunque hoy
- * no llaman a estos canales, mejor que el main lo imponga.
+ * Canales sensibles que ni la capa ni el mini-player necesitan: solo el SHELL.
+ * Encima del guard general (ipcGuard), que ya deja fuera a las pestanas.
  */
-function fromShell(e: { sender: Electron.WebContents }): boolean {
-  return mainWindow !== null && !mainWindow.isDestroyed() && e.sender === mainWindow.webContents
-}
-
-/**
- * ¿Es una superficie de TEK (shell, capa flotante, barra del mini-player)? Son
- * las que cargan el renderer propio; las pestanas cargan webs.
- */
-function isTekSurface(wc: Electron.WebContents): boolean {
-  const url = wc.getURL()
-  const devUrl = process.env['ELECTRON_RENDERER_URL']
-  if (isDev && devUrl && url.startsWith(devUrl)) return true
-  return url.startsWith('file://') && url.includes('/renderer/index.html')
+function fromShell(e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
+  return (
+    fromTek(e) && mainWindow !== null && !mainWindow.isDestroyed() && e.sender === mainWindow.webContents
+  )
 }
 
 /**
@@ -125,7 +134,7 @@ function applyTheme(theme: ThemeName): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBackgroundColor(info.void)
   views?.setChromeBackground(info.elevated)
   for (const wc of webContents.getAllWebContents()) {
-    if (!wc.isDestroyed() && isTekSurface(wc)) wc.send(IPC.themeChanged, theme)
+    if (isSurface(wc)) wc.send(IPC.themeChanged, theme)
   }
 }
 
@@ -167,6 +176,9 @@ function createWindow(): void {
       // que funcionan sandboxed.
       sandbox: true,
       contextIsolation: true,
+      // Soltar un archivo NO navega la UI (es el valor por defecto de Electron;
+      // explicito porque aqui una navegacion le daria window.tek a ese archivo).
+      navigateOnDragDrop: false,
       // Cuando la WebContentsView de una pestana tapa al shell, Chromium marca su
       // webContents como "en segundo plano" y ESTRANGULA timers/rAF: la paleta se
       // queda a medio cerrar (animacion de salida congelada) y el lienzo no se
@@ -176,14 +188,11 @@ function createWindow(): void {
     }
   })
 
-  // El shell NUNCA navega: si algo intentara llevar la UI a una URL remota,
-  // esa pagina tendria window.tek entero (incluida la API del vault). Solo se
-  // permite la carga propia (dev server en dev, file:// en produccion).
-  const devUrl = process.env['ELECTRON_RENDERER_URL'] ?? ''
-  mainWindow.webContents.on('will-navigate', (e, url) => {
-    const ok = (isDev && devUrl && url.startsWith(devUrl)) || url.startsWith('file://')
-    if (!ok) e.preventDefault()
-  })
+  // El shell NUNCA navega: si algo intentara llevar la UI a otra pagina, esa
+  // pagina tendria window.tek entero (incluida la API del vault). Solo vale la
+  // URL EXACTA de la app (antes bastaba con ser file://, cualquier archivo).
+  registerSurface(mainWindow.webContents)
+  lockToApp(mainWindow.webContents, { denyWindows: false })
 
   views = new ViewManager(mainWindow, brain!, adblock!, favicons!, loadPipChrome)
   views.setChromeBackground(THEMES[appearance?.get() ?? 'noche'].elevated)
@@ -358,63 +367,63 @@ function wireAutomation(v: ViewManager): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle(IPC.navigate, (_e, url: string) => views?.navigate(url))
-  ipcMain.handle(IPC.goBack, () => views?.goBack())
-  ipcMain.handle(IPC.goForward, () => views?.goForward())
-  ipcMain.handle(IPC.reload, () => views?.reload())
-  ipcMain.handle(IPC.stop, () => views?.stop())
-  ipcMain.handle(IPC.setVisible, (_e, visible: boolean) => views?.setOverlayVisible(visible))
+  handleTek(IPC.navigate, (_e, url: string) => views?.navigate(url))
+  handleTek(IPC.goBack, () => views?.goBack())
+  handleTek(IPC.goForward, () => views?.goForward())
+  handleTek(IPC.reload, () => views?.reload())
+  handleTek(IPC.stop, () => views?.stop())
+  handleTek(IPC.setVisible, (_e, visible: boolean) => views?.setOverlayVisible(visible))
   // Franja inferior para que un toast del renderer se vea sobre la pagina nativa.
-  ipcMain.on(IPC.setBottomInset, (_e, source: string, px: number) =>
+  onTek(IPC.setBottomInset, (_e, source: string, px: number) =>
     views?.setBottomInset(source, px)
   )
-  ipcMain.handle(IPC.tabNew, (_e, url?: string) => views?.create(url))
-  ipcMain.handle(IPC.tabClose, (_e, id: string) => views?.close(id))
-  ipcMain.handle(IPC.tabActivate, (_e, id: string) => views?.activate(id))
-  ipcMain.handle(IPC.tabHome, () => views?.home())
-  ipcMain.handle(IPC.tabSetMuted, (_e, id: string, muted: boolean) => views?.setMuted(id, muted))
-  ipcMain.handle(IPC.tabReopen, () => views?.reopenClosed())
-  ipcMain.handle(IPC.tabDuplicate, (_e, id: string) => views?.duplicate(id))
-  ipcMain.handle(IPC.tabMove, (_e, id: string, beforeId: string | null) =>
+  handleTek(IPC.tabNew, (_e, url?: string) => views?.create(url))
+  handleTek(IPC.tabClose, (_e, id: string) => views?.close(id))
+  handleTek(IPC.tabActivate, (_e, id: string) => views?.activate(id))
+  handleTek(IPC.tabHome, () => views?.home())
+  handleTek(IPC.tabSetMuted, (_e, id: string, muted: boolean) => views?.setMuted(id, muted))
+  handleTek(IPC.tabReopen, () => views?.reopenClosed())
+  handleTek(IPC.tabDuplicate, (_e, id: string) => views?.duplicate(id))
+  handleTek(IPC.tabMove, (_e, id: string, beforeId: string | null) =>
     views?.move(id, beforeId)
   )
-  ipcMain.handle(IPC.tabContextMenu, (_e, id: string) => views?.showTabMenu(id))
+  handleTek(IPC.tabContextMenu, (_e, id: string) => views?.showTabMenu(id))
 
   // Mini-player (Picture-in-Picture)
-  ipcMain.handle(IPC.pipEnter, (_e, tabId?: string) => views?.enterPip(tabId))
-  ipcMain.handle(IPC.pipToggle, () => views?.togglePip())
-  ipcMain.handle(IPC.pipExit, () => views?.exitPip(false))
-  ipcMain.handle(IPC.pipBackToTab, () => views?.exitPip(true))
-  ipcMain.handle(IPC.pipToggleFloat, () => views?.togglePipFloat())
-  ipcMain.handle(IPC.pipToggleMinimize, () => views?.togglePipMinimize())
-  ipcMain.handle(IPC.pipSetMuted, (_e, muted: boolean) => views?.setPipMuted(muted))
-  ipcMain.handle(IPC.pipMoveBy, (_e, dx: number, dy: number) => views?.pipMoveBy(dx, dy))
-  ipcMain.handle(IPC.pipSnap, () => views?.pipSnap())
-  ipcMain.handle(IPC.pipGetState, () => views?.pipState() ?? null)
+  handleTek(IPC.pipEnter, (_e, tabId?: string) => views?.enterPip(tabId))
+  handleTek(IPC.pipToggle, () => views?.togglePip())
+  handleTek(IPC.pipExit, () => views?.exitPip(false))
+  handleTek(IPC.pipBackToTab, () => views?.exitPip(true))
+  handleTek(IPC.pipToggleFloat, () => views?.togglePipFloat())
+  handleTek(IPC.pipToggleMinimize, () => views?.togglePipMinimize())
+  handleTek(IPC.pipSetMuted, (_e, muted: boolean) => views?.setPipMuted(muted))
+  handleTek(IPC.pipMoveBy, (_e, dx: number, dy: number) => views?.pipMoveBy(dx, dy))
+  handleTek(IPC.pipSnap, () => views?.pipSnap())
+  handleTek(IPC.pipGetState, () => views?.pipState() ?? null)
 
   // Capa flotante (menu ☰, Descargas, Historial). Abrir, repintar y cerrar es
   // cosa del SHELL; elegir un item o descartar, solo de la propia capa.
-  ipcMain.handle(IPC.layerOpen, (e, content: LayerContent) => {
+  handleTek(IPC.layerOpen, (e, content: LayerContent) => {
     if (fromShell(e)) floating?.open(content)
   })
-  ipcMain.on(IPC.layerUpdate, (e, content: LayerContent) => {
+  onTek(IPC.layerUpdate, (e, content: LayerContent) => {
     if (fromShell(e)) floating?.update(content)
   })
-  ipcMain.on(IPC.layerClose, (e) => {
+  onTek(IPC.layerClose, (e) => {
     if (fromShell(e)) floating?.close(false)
   })
-  ipcMain.handle(IPC.layerCurrent, (e) => (floating?.owns(e.sender) ? floating.current() : null))
-  ipcMain.on(IPC.layerPick, (e, id: unknown, keepOpen: unknown) => {
+  handleTek(IPC.layerCurrent, (e) => (floating?.owns(e.sender) ? floating.current() : null))
+  onTek(IPC.layerPick, (e, id: unknown, keepOpen: unknown) => {
     if (floating?.owns(e.sender) && typeof id === 'string') floating.pick(id, keepOpen === true)
   })
-  ipcMain.on(IPC.layerDismiss, (e) => {
+  onTek(IPC.layerDismiss, (e) => {
     if (floating?.owns(e.sender)) floating.close(true)
   })
 
   // Buscar en la pagina (Ctrl+F)
-  ipcMain.handle(IPC.findStart, (_e, text: string, opts?: FindOptions) => views?.find(text, opts))
-  ipcMain.handle(IPC.findStop, () => views?.stopFind())
-  ipcMain.handle(IPC.findSetOpen, (_e, open: boolean) => views?.setFindOpen(open))
+  handleTek(IPC.findStart, (_e, text: string, opts?: FindOptions) => views?.find(text, opts))
+  handleTek(IPC.findStop, () => views?.stopFind())
+  handleTek(IPC.findSetOpen, (_e, open: boolean) => views?.setFindOpen(open))
 
   // Perfil (nombre + tutorial visto). Solo el shell: es lo unico que TEK sabe
   // de la persona, ninguna pagina debe poder leerlo ni cambiarlo.
@@ -426,39 +435,43 @@ function registerIpc(): void {
     updateSeen: '',
     createdAt: Date.now()
   }
-  ipcMain.handle(IPC.profileGet, (e) =>
+  handleTek(IPC.profileGet, (e) =>
     fromShell(e) ? userProfile?.get() ?? DEFAULT_PROFILE : DEFAULT_PROFILE
   )
-  ipcMain.handle(IPC.profileSet, (e, patch: Partial<UserProfile>) =>
+  handleTek(IPC.profileSet, (e, patch: Partial<UserProfile>) =>
     fromShell(e) ? userProfile?.set(patch) ?? DEFAULT_PROFILE : DEFAULT_PROFILE
   )
 
   // Arcade: marcas de INTERFERENCIA. Solo el shell, como el perfil — ninguna
   // pagina debe poder leer ni plantar un record.
   const SIN_MARCAS: ArcadeStats = { record: 0, oleadaMax: 0, partidas: 0, mudo: false }
-  ipcMain.handle(IPC.arcadeStats, (e) => (fromShell(e) ? arcade?.get() ?? SIN_MARCAS : SIN_MARCAS))
-  ipcMain.handle(IPC.arcadeSubmit, (e, puntos: unknown, oleada: unknown) =>
+  handleTek(IPC.arcadeStats, (e) => (fromShell(e) ? arcade?.get() ?? SIN_MARCAS : SIN_MARCAS))
+  handleTek(IPC.arcadeSubmit, (e, puntos: unknown, oleada: unknown) =>
     fromShell(e) ? arcade?.registrar(puntos, oleada) ?? SIN_MARCAS : SIN_MARCAS
   )
-  ipcMain.handle(IPC.arcadeSetMuted, (e, mudo: unknown) =>
+  handleTek(IPC.arcadeSetMuted, (e, mudo: unknown) =>
     fromShell(e) ? arcade?.setMudo(mudo) ?? SIN_MARCAS : SIN_MARCAS
   )
 
   // Apariencia. Leerla, cualquier superficie de TEK: su preload la pide SINCRONA
   // antes de pintar. Cambiarla, solo el shell o la capa (el selector vive en el
   // menu ☰, que se pinta en la capa).
-  ipcMain.on(IPC.themeGet, (e) => {
-    e.returnValue = appearance?.get() ?? 'noche'
-  })
-  ipcMain.handle(IPC.themeSet, (e, theme: unknown) => {
+  onTekSync(
+    IPC.themeGet,
+    (e) => {
+      e.returnValue = appearance?.get() ?? 'noche'
+    },
+    'noche'
+  )
+  handleTek(IPC.themeSet, (e, theme: unknown) => {
     if (!appearance) return 'noche'
     return fromShell(e) || floating?.owns(e.sender) ? appearance.set(theme) : appearance.get()
   })
 
-  ipcMain.handle(IPC.appVersion, (e) => (fromShell(e) ? app.getVersion() : ''))
+  handleTek(IPC.appVersion, (e) => (fromShell(e) ? app.getVersion() : ''))
   // Reportar un fallo: solo desde el shell, y el propio Feedback valida y acota
   // lo que llega antes de mandarlo a ningun sitio.
-  ipcMain.handle(IPC.feedbackSend, async (e, draft: unknown) => {
+  handleTek(IPC.feedbackSend, async (e, draft: unknown) => {
     if (!fromShell(e) || !feedback) {
       return { ok: false, note: 'No se pudo enviar.', text: '' }
     }
@@ -476,54 +489,54 @@ function registerIpc(): void {
     error: '',
     pending: ''
   }
-  ipcMain.handle(IPC.updateCheck, (e) =>
+  handleTek(IPC.updateCheck, (e) =>
     fromShell(e) ? updater?.check(true) ?? IDLE_UPDATE : IDLE_UPDATE
   )
-  ipcMain.handle(IPC.updateDownload, (e) =>
+  handleTek(IPC.updateDownload, (e) =>
     fromShell(e) ? updater?.download() ?? IDLE_UPDATE : IDLE_UPDATE
   )
-  ipcMain.handle(IPC.updateInstall, (e) => {
+  handleTek(IPC.updateInstall, (e) => {
     if (fromShell(e)) updater?.install()
   })
-  ipcMain.handle(IPC.updateDismiss, (e) =>
+  handleTek(IPC.updateDismiss, (e) =>
     fromShell(e) ? updater?.dismiss() ?? IDLE_UPDATE : IDLE_UPDATE
   )
 
   // Musica: chip "Ahora suena" + control de la pestana que suena
   const IDLE_MEDIA = { now: null, exclusive: false }
-  ipcMain.handle(IPC.mediaGetState, () => media?.state() ?? IDLE_MEDIA)
-  ipcMain.handle(IPC.mediaPlayPause, () => media?.control('playpause'))
-  ipcMain.handle(IPC.mediaNext, () => media?.control('next'))
-  ipcMain.handle(IPC.mediaPrev, () => media?.control('prev'))
-  ipcMain.handle(IPC.mediaSetExclusive, (e, on: boolean) =>
+  handleTek(IPC.mediaGetState, () => media?.state() ?? IDLE_MEDIA)
+  handleTek(IPC.mediaPlayPause, () => media?.control('playpause'))
+  handleTek(IPC.mediaNext, () => media?.control('next'))
+  handleTek(IPC.mediaPrev, () => media?.control('prev'))
+  handleTek(IPC.mediaSetExclusive, (e, on: boolean) =>
     fromShell(e) && media ? media.setExclusive(on) : IDLE_MEDIA
   )
 
-  ipcMain.handle(IPC.sessionPeek, () => views?.peek() ?? null)
-  ipcMain.handle(IPC.sessionRestore, () => views?.restore())
-  ipcMain.handle(IPC.sessionDiscard, () => views?.discard())
+  handleTek(IPC.sessionPeek, () => views?.peek() ?? null)
+  handleTek(IPC.sessionRestore, () => views?.restore())
+  handleTek(IPC.sessionDiscard, () => views?.discard())
 
-  ipcMain.handle(IPC.winMinimize, () => mainWindow?.minimize())
-  ipcMain.handle(IPC.winMaximizeToggle, () => {
+  handleTek(IPC.winMinimize, () => mainWindow?.minimize())
+  handleTek(IPC.winMaximizeToggle, () => {
     if (!mainWindow) return
     if (mainWindow.isMaximized()) mainWindow.unmaximize()
     else mainWindow.maximize()
   })
-  ipcMain.handle(IPC.winClose, () => mainWindow?.close())
+  handleTek(IPC.winClose, () => mainWindow?.close())
 
   // Adblock
-  ipcMain.handle(
+  handleTek(
     IPC.adblockStatus,
     () => adblock?.status() ?? { enabled: false, ready: false, source: 'baseline', updatedAt: null }
   )
-  ipcMain.handle(IPC.adblockToggle, (_e, on: boolean) => adblock?.setEnabled(on) ?? false)
-  ipcMain.handle(IPC.adblockSiteAllowed, (_e, host: string) => adblock?.siteAllowed(host) ?? false)
-  ipcMain.handle(IPC.adblockAllowSite, (_e, host: string, allowed: boolean) =>
+  handleTek(IPC.adblockToggle, (_e, on: boolean) => adblock?.setEnabled(on) ?? false)
+  handleTek(IPC.adblockSiteAllowed, (_e, host: string) => adblock?.siteAllowed(host) ?? false)
+  handleTek(IPC.adblockAllowSite, (_e, host: string, allowed: boolean) =>
     adblock?.setSiteAllowed(host, allowed)
   )
 
   // Cerebro de TEK
-  ipcMain.handle(IPC.brainSuggestions, async (_e, limit?: number) => {
+  handleTek(IPC.brainSuggestions, async (_e, limit?: number) => {
     const sugs = brain?.suggestions(limit) ?? []
     if (!favicons || sugs.length === 0) return sugs
     // Asegura iconos para los hosts que aun no tengan (cap ~800ms; ya cacheados
@@ -534,13 +547,13 @@ function registerIpc(): void {
     ])
     return sugs.map((s) => ({ ...s, favicon: favicons!.get(s.host) }))
   })
-  ipcMain.handle(IPC.brainMusic, () => brain?.music() ?? { last: null, top: [] })
-  ipcMain.handle(IPC.brainRoutineForNow, () => brain?.routineForNow() ?? null)
-  ipcMain.handle(IPC.brainProfile, () => brain?.profile() ?? null)
-  ipcMain.handle(IPC.brainSetPaused, (_e, paused: boolean) => brain?.setPaused(paused) ?? true)
-  ipcMain.handle(IPC.brainForget, (_e, host: string) => brain?.forget(host))
-  ipcMain.handle(IPC.brainWipe, () => brain?.wipe())
-  ipcMain.handle(
+  handleTek(IPC.brainMusic, () => brain?.music() ?? { last: null, top: [] })
+  handleTek(IPC.brainRoutineForNow, () => brain?.routineForNow() ?? null)
+  handleTek(IPC.brainProfile, () => brain?.profile() ?? null)
+  handleTek(IPC.brainSetPaused, (_e, paused: boolean) => brain?.setPaused(paused) ?? true)
+  handleTek(IPC.brainForget, (_e, host: string) => brain?.forget(host))
+  handleTek(IPC.brainWipe, () => brain?.wipe())
+  handleTek(
     IPC.brainHistory,
     (_e, opts?: { query?: string; limit?: number; offset?: number; distinct?: boolean }) => {
       const rows = brain?.history(opts) ?? []
@@ -548,28 +561,28 @@ function registerIpc(): void {
       return favicons ? rows.map((r) => ({ ...r, favicon: favicons!.get(r.host) })) : rows
     }
   )
-  ipcMain.handle(IPC.brainQueries, (_e, q: string, limit?: number) =>
+  handleTek(IPC.brainQueries, (_e, q: string, limit?: number) =>
     brain?.pastQueries(q, limit) ?? []
   )
-  ipcMain.handle(IPC.brainDeleteVisit, (_e, id: number) => brain?.deleteVisit(id))
-  ipcMain.handle(IPC.brainClearHistory, (_e, sinceMs?: number) => brain?.clearHistory(sinceMs))
-  ipcMain.handle(IPC.brainIgnore, (_e, host: string) => brain?.ignore(host))
-  ipcMain.handle(IPC.brainUnignore, (_e, host: string) => brain?.unignore(host))
-  ipcMain.handle(IPC.brainIgnored, () => brain?.ignored() ?? [])
+  handleTek(IPC.brainDeleteVisit, (_e, id: number) => brain?.deleteVisit(id))
+  handleTek(IPC.brainClearHistory, (_e, sinceMs?: number) => brain?.clearHistory(sinceMs))
+  handleTek(IPC.brainIgnore, (_e, host: string) => brain?.ignore(host))
+  handleTek(IPC.brainUnignore, (_e, host: string) => brain?.unignore(host))
+  handleTek(IPC.brainIgnored, () => brain?.ignored() ?? [])
 
   // Descargas
-  ipcMain.handle(IPC.downloadsList, () => downloads?.list() ?? [])
-  ipcMain.handle(IPC.downloadsOpenFile, (_e, id: string) => downloads?.openFile(id))
-  ipcMain.handle(IPC.downloadsShowInFolder, (_e, id: string) => downloads?.showInFolder(id))
-  ipcMain.handle(IPC.downloadsCancel, (_e, id: string) => downloads?.cancel(id))
-  ipcMain.handle(IPC.downloadsRemove, (_e, id: string) => downloads?.remove(id))
-  ipcMain.handle(IPC.downloadsClear, () => downloads?.clear())
+  handleTek(IPC.downloadsList, () => downloads?.list() ?? [])
+  handleTek(IPC.downloadsOpenFile, (_e, id: string) => downloads?.openFile(id))
+  handleTek(IPC.downloadsShowInFolder, (_e, id: string) => downloads?.showInFolder(id))
+  handleTek(IPC.downloadsCancel, (_e, id: string) => downloads?.cancel(id))
+  handleTek(IPC.downloadsRemove, (_e, id: string) => downloads?.remove(id))
+  handleTek(IPC.downloadsClear, () => downloads?.clear())
 
   // Radar de servers locales + ajustes dev
-  ipcMain.handle(IPC.devServers, () => radar?.list() ?? [])
-  ipcMain.handle(IPC.devScan, () => radar?.scan() ?? [])
-  ipcMain.handle(IPC.devSettingsGet, () => settings?.get())
-  ipcMain.handle(IPC.devSettingsSet, async (e, patch: Partial<DevSettings>) => {
+  handleTek(IPC.devServers, () => radar?.list() ?? [])
+  handleTek(IPC.devScan, () => radar?.scan() ?? [])
+  handleTek(IPC.devSettingsGet, () => settings?.get())
+  handleTek(IPC.devSettingsSet, async (e, patch: Partial<DevSettings>) => {
     if (!fromShell(e) || !settings) return settings?.get()
     const next = settings.set(patch)
     // El puente arranca/para al vuelo segun el ajuste.
@@ -581,7 +594,7 @@ function registerIpc(): void {
   })
 
   // Automatizacion
-  ipcMain.handle(IPC.autoState, () => ({
+  handleTek(IPC.autoState, () => ({
     recipes: automation?.recipes() ?? [],
     workspaces: automation?.workspaces() ?? [],
     snippets: scripts?.snippets() ?? [],
@@ -590,13 +603,13 @@ function registerIpc(): void {
     macros: macros?.list() ?? [],
     recording: macros?.recording ?? false
   }))
-  ipcMain.handle(IPC.autoSaveRecipe, (_e, r: Recipe) => automation?.saveRecipe(r))
-  ipcMain.handle(IPC.autoDeleteRecipe, (_e, id: string) => automation?.deleteRecipe(id))
-  ipcMain.handle(IPC.autoRunRecipe, (_e, id: string) => automation?.run(id))
-  ipcMain.handle(IPC.autoSaveWorkspace, (_e, w: Workspace) => automation?.saveWorkspace(w))
-  ipcMain.handle(IPC.autoDeleteWorkspace, (_e, id: string) => automation?.deleteWorkspace(id))
-  ipcMain.handle(IPC.autoOpenWorkspace, (_e, id: string) => automation?.openWorkspace(id))
-  ipcMain.handle(IPC.autoWorkspaceFromTabs, (_e, name: string) => {
+  handleTek(IPC.autoSaveRecipe, (_e, r: Recipe) => automation?.saveRecipe(r))
+  handleTek(IPC.autoDeleteRecipe, (_e, id: string) => automation?.deleteRecipe(id))
+  handleTek(IPC.autoRunRecipe, (_e, id: string) => automation?.run(id))
+  handleTek(IPC.autoSaveWorkspace, (_e, w: Workspace) => automation?.saveWorkspace(w))
+  handleTek(IPC.autoDeleteWorkspace, (_e, id: string) => automation?.deleteWorkspace(id))
+  handleTek(IPC.autoOpenWorkspace, (_e, id: string) => automation?.openWorkspace(id))
+  handleTek(IPC.autoWorkspaceFromTabs, (_e, name: string) => {
     if (!automation || !views) return null
     const urls = views
       .tabsForBridge()
@@ -604,29 +617,29 @@ function registerIpc(): void {
       .filter((u) => /^https?:\/\//i.test(u))
     return automation.workspaceFromUrls(name, urls)
   })
-  ipcMain.handle(IPC.autoSaveSnippet, (_e, s: Snippet) => scripts?.saveSnippet(s))
-  ipcMain.handle(IPC.autoDeleteSnippet, (_e, id: string) => scripts?.deleteSnippet(id))
-  ipcMain.handle(
+  handleTek(IPC.autoSaveSnippet, (_e, s: Snippet) => scripts?.saveSnippet(s))
+  handleTek(IPC.autoDeleteSnippet, (_e, id: string) => scripts?.deleteSnippet(id))
+  handleTek(
     IPC.autoRunSnippet,
     (_e, id: string): Promise<SnippetResult> =>
       scripts?.runSnippet(id) ?? Promise.resolve({ ok: false, value: 'sin motor' })
   )
-  ipcMain.handle(IPC.autoSaveSiteScript, (_e, s: SiteScript) => scripts?.saveSiteScript(s))
-  ipcMain.handle(IPC.autoDeleteSiteScript, (_e, id: string) => scripts?.deleteSiteScript(id))
-  ipcMain.handle(IPC.autoSaveWatcher, (_e, w: Watcher) => watchers?.save(w))
-  ipcMain.handle(IPC.autoDeleteWatcher, (_e, id: string) => watchers?.delete(id))
-  ipcMain.handle(IPC.autoCheckWatcher, (_e, id: string) => watchers?.check(id) ?? null)
-  ipcMain.handle(IPC.autoDeleteMacro, (_e, id: string) => macros?.delete(id))
-  ipcMain.handle(IPC.autoRunMacro, (_e, id: string) => macros?.run(id))
-  ipcMain.handle(IPC.autoRecordStart, () => macros?.startRecording() ?? false)
-  ipcMain.handle(IPC.autoRecordStop, (_e, name: string | null) => macros?.stopRecording(name) ?? null)
+  handleTek(IPC.autoSaveSiteScript, (_e, s: SiteScript) => scripts?.saveSiteScript(s))
+  handleTek(IPC.autoDeleteSiteScript, (_e, id: string) => scripts?.deleteSiteScript(id))
+  handleTek(IPC.autoSaveWatcher, (_e, w: Watcher) => watchers?.save(w))
+  handleTek(IPC.autoDeleteWatcher, (_e, id: string) => watchers?.delete(id))
+  handleTek(IPC.autoCheckWatcher, (_e, id: string) => watchers?.check(id) ?? null)
+  handleTek(IPC.autoDeleteMacro, (_e, id: string) => macros?.delete(id))
+  handleTek(IPC.autoRunMacro, (_e, id: string) => macros?.run(id))
+  handleTek(IPC.autoRecordStart, () => macros?.startRecording() ?? false)
+  handleTek(IPC.autoRecordStop, (_e, name: string | null) => macros?.stopRecording(name) ?? null)
 
   // Puente para agentes (solo el shell puede tocarlo)
-  ipcMain.handle(IPC.bridgeStatus, (e) => {
+  handleTek(IPC.bridgeStatus, (e) => {
     if (!fromShell(e)) return null
     return bridge?.status(settings?.get().bridgeEnabled ?? false) ?? null
   })
-  ipcMain.handle(IPC.bridgeSetEnabled, async (e, on: boolean) => {
+  handleTek(IPC.bridgeSetEnabled, async (e, on: boolean) => {
     if (!fromShell(e) || !bridge || !settings) return null
     settings.set({ bridgeEnabled: on })
     if (on) await bridge.start()
@@ -635,19 +648,19 @@ function registerIpc(): void {
   })
 
   // Contrasenas (canales sensibles: solo el shell)
-  ipcMain.handle(IPC.pwStatus, (e) => (fromShell(e) ? passwords?.status() : null))
-  ipcMain.handle(IPC.pwList, (e) => (fromShell(e) ? passwords?.list() ?? [] : []))
-  ipcMain.handle(IPC.pwReveal, (e, id: string) => (fromShell(e) ? passwords?.reveal(id) ?? null : null))
-  ipcMain.handle(IPC.pwDelete, (e, id: string) => {
+  handleTek(IPC.pwStatus, (e) => (fromShell(e) ? passwords?.status() : null))
+  handleTek(IPC.pwList, (e) => (fromShell(e) ? passwords?.list() ?? [] : []))
+  handleTek(IPC.pwReveal, (e, id: string) => (fromShell(e) ? passwords?.reveal(id) ?? null : null))
+  handleTek(IPC.pwDelete, (e, id: string) => {
     if (fromShell(e)) passwords?.remove(id)
   })
-  ipcMain.handle(IPC.pwRemoveNever, (e, host: string) => {
+  handleTek(IPC.pwRemoveNever, (e, host: string) => {
     if (fromShell(e)) passwords?.removeNever(host)
   })
-  ipcMain.handle(IPC.pwDecision, (e, offerId: string, action: PwDecision) => {
+  handleTek(IPC.pwDecision, (e, offerId: string, action: PwDecision) => {
     if (fromShell(e)) passwords?.decision(offerId, action)
   })
-  ipcMain.handle(IPC.pwFill, (e, tabId: string, credId: string) => {
+  handleTek(IPC.pwFill, (e, tabId: string, credId: string) => {
     if (!fromShell(e) || !views || !passwords) return false
     const wc = views.wcOfTab(tabId)
     const cred = passwords.credFor(credId)
@@ -660,36 +673,37 @@ function registerIpc(): void {
   })
 
   // Contrasena maestra de la boveda (solo el shell)
-  ipcMain.handle(IPC.pwSetMaster, (e, next: string | null, current?: string) =>
+  handleTek(IPC.pwSetMaster, (e, next: string | null, current?: string) =>
     fromShell(e) ? passwords?.setMaster(next, current) ?? { ok: false } : { ok: false }
   )
-  ipcMain.handle(IPC.pwUnlock, (e, password: string) =>
+  handleTek(IPC.pwUnlock, (e, password: string) =>
     fromShell(e) ? passwords?.unlock(password) ?? false : false
   )
-  ipcMain.handle(IPC.pwLock, (e) => {
+  handleTek(IPC.pwLock, (e) => {
     if (fromShell(e)) passwords?.lock()
   })
 
   // Permisos de sitio (solo el shell consulta/revoca)
-  ipcMain.handle(IPC.permsList, (e) => (fromShell(e) ? permissions?.list() ?? [] : []))
-  ipcMain.handle(IPC.permsRevoke, (e, host: string, permission: string) => {
+  handleTek(IPC.permsList, (e) => (fromShell(e) ? permissions?.list() ?? [] : []))
+  handleTek(IPC.permsRevoke, (e, host: string, permission: string) => {
     if (fromShell(e)) permissions?.revoke(host, permission)
   })
 
   // Privacidad: borrar datos de navegacion (solo el shell; acciones destructivas)
-  ipcMain.handle(IPC.privacyClear, (e, scope?: ClearScope) => {
+  handleTek(IPC.privacyClear, (e, scope?: ClearScope) => {
     if (fromShell(e)) return privacy?.clear(scope)
   })
-  ipcMain.handle(IPC.privacyClearHost, (e, host: string) => {
+  handleTek(IPC.privacyClearHost, (e, host: string) => {
     if (fromShell(e)) return privacy?.clearForHost(host)
   })
 
   // Canales del preload de las webviews (vienen de las PAGINAS: validar fuerte).
-  ipcMain.on(WV.pwCaptured, (e, payload: unknown) => passwords?.handleCaptured(e.sender, payload))
+  // Son los UNICOS que una pestana puede usar; todo lo de arriba se le niega.
+  onPage(WV.pwCaptured, (e, payload: unknown) => passwords?.handleCaptured(e.sender, payload))
   // La pagina gano o perdio un campo de login visible. Solo entonces ofrecemos
   // rellenar; con `creds: []` el renderer retira el aviso. El host lo sacamos
   // del webContents, no de lo que diga la pagina.
-  ipcMain.on(WV.pwFormPresent, (e, present: unknown) => {
+  onPage(WV.pwFormPresent, (e, present: unknown) => {
     if (!views || !passwords || e.sender.isDestroyed()) return
     const tabId = views.tabIdOfWcId(e.sender.id)
     if (!tabId) return
@@ -697,21 +711,29 @@ function registerIpc(): void {
     const creds = present === true && !passwords.status().locked ? passwords.metasFor(host) : []
     sendToShell(IPC.pwFillAvailable, { tabId, host, creds })
   })
-  ipcMain.on(WV.macroEvent, (e, step: unknown) => macros?.handleEvent(e.sender, step))
+  onPage(WV.macroEvent, (e, step: unknown) => macros?.handleEvent(e.sender, step))
   // Metadatos de MediaSession de una pagina (titulo/artista/caratula del chip).
-  ipcMain.on(WV.mediaMeta, (e, payload: unknown) => media?.handleMeta(e.sender, payload))
-  ipcMain.handle(WV.macroIsRecording, (e) => macros?.isRecordingWc(e.sender.id) ?? false)
+  onPage(WV.mediaMeta, (e, payload: unknown) => media?.handleMeta(e.sender, payload))
+  handlePage(WV.macroIsRecording, (e) => macros?.isRecordingWc(e.sender.id) ?? false)
   // "Permitir sitio" en el escudo significa NO TOCAR: ni red ni defusers. El
   // preload lo pregunta sincrono antes de parchear nada (ver WV.siteUntouched).
-  ipcMain.on(WV.siteUntouched, (e, host: unknown) => {
-    const h = typeof host === 'string' ? host.replace(/^www\./, '') : ''
-    e.returnValue = !!h && !!adblock?.siteUntouched(h)
-  })
+  onPageSync(
+    WV.siteUntouched,
+    (e, host: unknown) => {
+      const h = typeof host === 'string' ? host.replace(/^www\./, '') : ''
+      e.returnValue = !!h && !!adblock?.siteUntouched(h)
+    },
+    false
+  )
   // Scriptlets del adblock en document_start: la pieza que mata el muro
   // anti-adblock de YouTube (ver WV.adScripts y Adblock.scriptsFor).
-  ipcMain.on(WV.adScripts, (e, url: unknown) => {
-    e.returnValue = typeof url === 'string' ? (adblock?.scriptsFor(url) ?? []) : []
-  })
+  onPageSync(
+    WV.adScripts,
+    (e, url: unknown) => {
+      e.returnValue = typeof url === 'string' ? (adblock?.scriptsFor(url) ?? []) : []
+    },
+    []
+  )
 }
 
 /**

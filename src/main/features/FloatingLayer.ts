@@ -1,6 +1,7 @@
 import { WebContentsView, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { IPC, type LayerContent, type LayerEvent } from '@shared/ipc'
+import { lockToApp, registerSurface } from '../ipcGuard'
 
 /**
  * Capa flotante: el menu ☰, Descargas e Historial.
@@ -82,6 +83,7 @@ export class FloatingLayer {
         preload: join(import.meta.dirname, '../preload/index.cjs'),
         sandbox: true,
         contextIsolation: true,
+        navigateOnDragDrop: false,
         // Pasa casi todo el tiempo oculta: estrangulada, el primer frame al
         // abrir llegaria tarde.
         backgroundThrottling: false
@@ -90,8 +92,10 @@ export class FloatingLayer {
     // Transparente: solo se ve el panel; el resto deja ver la pagina.
     view.setBackgroundColor('#00000000')
     view.setVisible(false)
-    // Solo pinta paneles: ni ventanas nuevas ni navegar a ningun sitio.
-    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    // Solo pinta paneles: ni ventanas nuevas ni navegar a ningun sitio que no
+    // sea la UI de TEK. Y es superficie: puede usar la API de TEK (ipcGuard).
+    registerSurface(view.webContents)
+    lockToApp(view.webContents, { denyWindows: true })
     // Mientras (re)carga no hay UI montada: no se enseña hasta que avise (current).
     view.webContents.on('did-start-loading', () => {
       if (this.view === view) this.ready = false

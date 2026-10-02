@@ -41,6 +41,14 @@ interface KdfParams {
   N: number
   r: number
   p: number
+  /**
+   * Verificador: CHECK sellado con la clave maestra (AES-GCM). Es lo que dice
+   * si una contrasena es la buena aunque la boveda este VACIA. Sin el, con la
+   * boveda vacia `unlock` aceptaba cualquier cosa y lo que se guardaba despues
+   * quedaba cifrado con una clave que nadie conocia. Las bovedas de antes de
+   * existir el verificador lo ganan en su primer desbloqueo correcto.
+   */
+  check?: string
 }
 
 interface VaultData {
@@ -66,6 +74,8 @@ const AUTOLOCK_MS = 15 * 60_000
 const SCRYPT: Omit<KdfParams, 'salt'> = { N: 32768, r: 8, p: 1 }
 /** Marca de los secretos que llevan la capa de contrasena maestra. */
 const V2 = 'v2:'
+/** Texto conocido que se sella como verificador de la clave maestra. */
+const CHECK = 'tek-vault-ok-v1'
 
 export class Passwords {
   private readonly store = new JsonStore<VaultData>('tek-vault.json', {
@@ -187,21 +197,40 @@ export class Passwords {
     this.lockTimer = setTimeout(() => this.lock(), AUTOLOCK_MS)
   }
 
-  /** Desbloquea con la contrasena maestra. La prueba es el propio tag GCM. */
+  /**
+   * Desbloquea con la contrasena maestra. La prueba es el verificador (el tag
+   * GCM de CHECK); en una boveda de antes del verificador, el de un secreto.
+   */
   unlock(password: string): boolean {
     const kdf = this.store.data.kdf
     if (!kdf) return true // no hay nada que desbloquear
     const key = this.derive(password, kdf)
-    const first = this.store.data.entries.find((e) => e.secret.startsWith(V2))
-    if (first) {
-      const inner = (() => {
-        try {
-          return safeStorage.decryptString(Buffer.from(first.secret.slice(V2.length), 'base64'))
-        } catch {
-          return null
+    if (kdf.check) {
+      if (this.open(kdf.check, key) !== CHECK) {
+        key.fill(0)
+        return false
+      }
+    } else {
+      // Boveda anterior al verificador: se comprueba contra un secreto si lo hay.
+      const first = this.store.data.entries.find((e) => e.secret.startsWith(V2))
+      if (first) {
+        const inner = (() => {
+          try {
+            return safeStorage.decryptString(Buffer.from(first.secret.slice(V2.length), 'base64'))
+          } catch {
+            return null
+          }
+        })()
+        if (inner === null || this.open(inner, key) === null) {
+          key.fill(0)
+          return false
         }
-      })()
-      if (inner === null || this.open(inner, key) === null) return false
+      }
+      // Desde aqui ya hay verificador. Si estaba VACIA no habia forma de saber
+      // cual era la buena (lo que se escriba pasa a serlo, como antes), pero a
+      // partir de este momento ya no aceptara cualquier otra.
+      kdf.check = this.seal(CHECK, key)
+      this.store.flush()
     }
     this.key = key
     this.touch()
@@ -245,25 +274,35 @@ export class Passwords {
     }
 
     const previous = this.key
+    const previousKdf = this.store.data.kdf
     if (next === null) {
       this.key = null
       this.store.data.kdf = null
     } else {
       const kdf: KdfParams = { salt: randomBytes(16).toString('base64'), ...SCRYPT }
       this.key = this.derive(next, kdf)
+      kdf.check = this.seal(CHECK, this.key)
       this.store.data.kdf = kdf
     }
 
-    for (const { entry, password } of plain) {
+    // Todo se re-cifra APARTE y solo se aplica si salio entero: un fallo a mitad
+    // dejaba antes la clave vieja con el kdf nuevo y secretos mezclados.
+    const fresh: string[] = []
+    for (const { password } of plain) {
       const secret = this.encrypt(password)
       if (secret === null) {
-        // Vuelta atras: ni un secreto se queda ilegible.
+        this.key?.fill(0)
         this.key = previous
+        this.store.data.kdf = previousKdf
         return { ok: false, error: 'no se pudo re-cifrar la bóveda' }
       }
-      entry.secret = secret
-      entry.updatedAt = Date.now()
+      fresh.push(secret)
     }
+    const now = Date.now()
+    plain.forEach(({ entry }, i) => {
+      entry.secret = fresh[i]
+      entry.updatedAt = now
+    })
     previous?.fill(0)
     this.store.flush()
     this.touch()

@@ -1,14 +1,49 @@
 import { randomUUID } from 'node:crypto'
+import { safeStorage } from 'electron'
 import { WV, type Macro, type MacroStep } from '@shared/ipc'
 import { JsonStore } from './jsonStore'
 
 /**
  * Macros: graba un flujo (clics, texto, Enter) sobre la pestana activa y lo
  * reproduce despues. La grabacion vive en el preload de la pagina (selectores
- * robustos, NUNCA el valor de un campo password); la reproduccion corre desde
- * aqui con executeJavaScript paso a paso, esperando a que cada selector exista
- * (las SPA tardan en pintar).
+ * robustos; NUNCA el valor de una contrasena, tarjeta o codigo de un solo uso);
+ * la reproduccion corre desde aqui con executeJavaScript paso a paso, esperando
+ * a que cada selector exista (las SPA tardan en pintar).
+ *
+ * Lo que SI se graba (lo que escribiste en un buscador, un formulario...) va
+ * CIFRADO en disco con el cifrado del sistema (DPAPI), como las contrasenas: en
+ * tek-macros.json no queda nada legible. Sin cifrado disponible se guarda como
+ * antes, que es lo unico posible.
  */
+
+/** Marca de un valor cifrado con safeStorage. */
+const ENC = 'enc:'
+
+function canEncrypt(): boolean {
+  try {
+    return safeStorage.isEncryptionAvailable()
+  } catch {
+    return false
+  }
+}
+
+function seal(value: string): string {
+  if (!value || value.startsWith(ENC) || !canEncrypt()) return value
+  try {
+    return ENC + safeStorage.encryptString(value).toString('base64')
+  } catch {
+    return value
+  }
+}
+
+function unseal(value: string): string {
+  if (!value.startsWith(ENC)) return value
+  try {
+    return safeStorage.decryptString(Buffer.from(value.slice(ENC.length), 'base64'))
+  } catch {
+    return '' // otra cuenta de Windows / archivo copiado: el paso se queda vacio
+  }
+}
 
 interface MacrosData {
   macros: Macro[]
@@ -91,12 +126,33 @@ export class Macros {
   /** Indicador REC del renderer. */
   onRecState: ((recording: boolean) => void) | null = null
 
+  constructor() {
+    // Macros grabadas por versiones anteriores: su texto estaba en claro.
+    let changed = false
+    for (const m of this.store.data.macros) {
+      for (const s of m.steps) {
+        if (s.type === 'input' && s.value && !s.value.startsWith(ENC)) {
+          const sealed = seal(s.value)
+          if (sealed !== s.value) {
+            s.value = sealed
+            changed = true
+          }
+        }
+      }
+    }
+    if (changed) this.store.flush()
+  }
+
   setDeps(deps: MacroDeps): void {
     this.deps = deps
   }
 
+  /** Para el panel: sin el texto grabado (no lo pinta y no tiene por que verlo). */
   list(): Macro[] {
-    return this.store.data.macros
+    return this.store.data.macros.map((m) => ({
+      ...m,
+      steps: m.steps.map((s) => (s.type === 'input' ? { ...s, value: '' } : s))
+    }))
   }
 
   get recording(): boolean {
@@ -139,12 +195,13 @@ export class Macros {
       id: randomUUID(),
       name: String(name).trim().slice(0, 80) || 'Macro',
       startUrl,
-      steps: steps.slice(0, 200),
+      // El texto escrito se guarda cifrado (ver seal).
+      steps: steps.slice(0, 200).map((s) => (s.type === 'input' ? { ...s, value: seal(s.value) } : s)),
       createdAt: Date.now()
     }
     this.store.data.macros.push(macro)
     this.store.save()
-    return macro
+    return { ...macro, steps: macro.steps.map((s) => (s.type === 'input' ? { ...s, value: '' } : s)) }
   }
 
   /** ¿Este webContents es el que esta grabando? (lo pregunta el preload). */
@@ -191,7 +248,8 @@ export class Macros {
         await wc.loadURL(step.url).catch(() => undefined)
         await waitLoaded(wc)
       } else {
-        await wc.executeJavaScript(stepScript(step), true).catch(() => undefined)
+        const live = step.type === 'input' ? { ...step, value: unseal(step.value) } : step
+        await wc.executeJavaScript(stepScript(live), true).catch(() => undefined)
         // El paso pudo disparar una navegacion (submit, link): esperala.
         await sleep(STEP_GAP_MS)
         await waitLoaded(wc)
