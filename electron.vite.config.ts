@@ -7,6 +7,16 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: { '@shared': resolve('src/shared') }
+    },
+    build: {
+      rollupOptions: {
+        // El parseo de las listas del bloqueador corre en su propio proceso
+        // (utilityProcess): es otro punto de entrada, out/main/adblockWorker.js.
+        input: {
+          index: resolve('src/main/index.ts'),
+          adblockWorker: resolve('src/main/features/adblock/worker.ts')
+        }
+      }
     }
   },
   preload: {

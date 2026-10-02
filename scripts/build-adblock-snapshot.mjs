@@ -1,7 +1,9 @@
 // Genera el SNAPSHOT de adblock que se empaqueta con la app (assets/adblock):
 //   - lists.txt      todas las listas de filtros concatenadas
 //   - resources.json los scriptlets de uBO (los +js(...) que desarman el muro
-//                    anti-adblock de YouTube)
+//                    anti-adblock de YouTube). Es el UNICO sitio del que TEK
+//                    saca ese codigo: en runtime ya no se baja (ver Adblock.ts),
+//                    viaja con cada version del instalador.
 //
 // Con esto, una instalacion FRESCA tiene proteccion completa desde el primer
 // arranque aunque no haya red o la red bloquee GitHub — antes solo llevaba el
@@ -33,17 +35,42 @@ const LISTS = [
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'adblock')
 
+// MISMO filtro que stripTrustedScriptlets en Adblock.ts (mantener en sync): de
+// las listas que NO son de uBO se quitan los scriptlets trusted-*, que aceptan
+// cualquier argumento y uBO solo admite de sus propias listas.
+const TRUSTED_LISTS_PREFIX = 'https://ublockorigin.github.io/'
+const TRUSTED_SCRIPTLET = /(\+js\(\s*|\/\/scriptlet\(\s*['"])trusted-/i
+const stripTrusted = (url, text) =>
+  url.startsWith(TRUSTED_LISTS_PREFIX) || !TRUSTED_SCRIPTLET.test(text)
+    ? text
+    : text
+        .split('\n')
+        .filter((line) => !TRUSTED_SCRIPTLET.test(line))
+        .join('\n')
+
 app.whenReady().then(async () => {
   try {
     const cFetch = (url) => net.fetch(url)
 
     // Tolerante: cada lista por su cuenta. Si alguna cae, seguimos con las demas.
-    const settled = await Promise.allSettled(LISTS.map((u) => cFetch(u).then((r) => r.text())))
+    const settled = await Promise.allSettled(
+      LISTS.map((u) =>
+        cFetch(u).then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.text()
+        })
+      )
+    )
     const texts = []
+    let quitados = 0
     settled.forEach((r, i) => {
-      if (r.status === 'fulfilled') texts.push(r.value)
-      else console.warn(`[snapshot] no se pudo bajar ${LISTS[i]}: ${r.reason}`)
+      if (r.status === 'fulfilled') {
+        const limpio = stripTrusted(LISTS[i], r.value)
+        quitados += r.value.split('\n').length - limpio.split('\n').length
+        texts.push(limpio)
+      } else console.warn(`[snapshot] no se pudo bajar ${LISTS[i]}: ${r.reason}`)
     })
+    if (quitados) console.log(`[snapshot] scriptlets trusted-* quitados de listas que no son de uBO: ${quitados}`)
     if (texts.length === 0) throw new Error('ninguna lista disponible')
 
     // Sanity check: que las listas parseen a un motor valido antes de guardarlas.

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@ghostery/adblocker':
+        specifier: 2.18.0
+        version: 2.18.0
       '@ghostery/adblocker-electron':
         specifier: ^2.18.0
         version: 2.18.0(electron@https://codeload.github.com/castlabs/electron-releases/tar.gz/e428e34f0a72dcff7aed9da06846b8872ed388db)

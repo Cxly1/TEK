@@ -30,6 +30,7 @@
     ]
   },
   "dependencies": {
+    "@ghostery/adblocker": "2.18.0",
     "@ghostery/adblocker-electron": "^2.18.0",
     "better-sqlite3": "^12.10.0",
     "electron-updater": "^6.8.9",

@@ -1,10 +1,10 @@
-import { app, net, session as electronSession } from 'electron'
+import { app, net, session as electronSession, utilityProcess, webContents } from 'electron'
 import { join } from 'node:path'
-import { mkdir, readFile, writeFile, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, rename, writeFile, stat } from 'node:fs/promises'
 import {
   ElectronBlocker,
-  fetchResources,
-  type Fetch,
+  type BlockingResponse,
   type Request as AdRequest
 } from '@ghostery/adblocker-electron'
 import type { AdblockSource } from '@shared/ipc'
@@ -22,9 +22,60 @@ import { parse as parseDomain } from 'tldts-experimental'
  * ademas cacheamos el motor serializado en disco para no depender de la red.
  *
  * Resiliente como el Brain: si algo falla, degrada y el navegador no se cae.
+ *
+ * CODIGO vs DATOS (ronda de seguridad 2026-10):
+ *  - Los SCRIPTLETS (resources.json: el codigo que corre dentro de cada web)
+ *    salen SOLO del instalador, como en uBlock Origin o Brave, que los llevan
+ *    dentro. Antes se bajaban de raw.githubusercontent cada 12 h: si ese CDN se
+ *    comprometia, su codigo acababa dentro de tu banco o tu correo.
+ *  - Las LISTAS (datos: que bloquear y con que argumentos) se siguen bajando
+ *    cada 12 h, que es lo que cambia a diario. Pero de las listas que no son de
+ *    uBO se quitan los scriptlets `trusted-*`: esos aceptan cualquier argumento
+ *    (meter HTML, reescribir respuestas...) y uBO solo los acepta de SUS listas;
+ *    el motor de Ghostery no hace esa distincion, asi que la hacemos aqui.
+ *  - Parsear las listas (1-1,5 s de CPU) va en un proceso aparte (worker.ts):
+ *    antes congelaba TEK entero tras cada arranque y cada 12 h. Y si la cache
+ *    tiene menos de 12 h, al arrancar ni se refresca.
  */
 
-const RESOURCES_CHECKSUM = 'ghostery-resources'
+/** De quien son las listas en las que SI se aceptan scriptlets trusted-*. */
+const TRUSTED_LISTS_PREFIX = 'https://ublockorigin.github.io/'
+
+/** Un scriptlet trusted-* (sintaxis uBO `+js(...)` o AdGuard `//scriptlet(...)`). */
+const TRUSTED_SCRIPTLET = /(\+js\(\s*|\/\/scriptlet\(\s*['"])trusted-/i
+
+/** Quita los scriptlets trusted-* de una lista que no es de uBO (ver arriba). */
+export function stripTrustedScriptlets(url: string, text: string): string {
+  if (url.startsWith(TRUSTED_LISTS_PREFIX)) return text
+  if (!TRUSTED_SCRIPTLET.test(text)) return text
+  return text
+    .split('\n')
+    .filter((line) => !TRUSTED_SCRIPTLET.test(line))
+    .join('\n')
+}
+
+/**
+ * Escritura atomica (tmp + rename): un cierre a mitad no deja el motor, la meta
+ * o los ajustes partidos (un engine.bin roto obligaba a reparsear el snapshot).
+ */
+async function writeAtomic(path: string, data: string | Uint8Array): Promise<void> {
+  const tmp = `${path}.tmp`
+  await writeFile(tmp, data)
+  await rename(tmp, path)
+}
+
+/** Huella corta de un texto (para saber si las listas o los scriptlets cambiaron). */
+function fingerprint(text: string): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, 32)
+}
+
+/** Lo que se recuerda del motor guardado en cache (adblock/meta.json). */
+interface EngineMeta {
+  /** Huella de las listas con las que se construyo. */
+  listsHash: string
+  /** Cuando se comprobaron por ultima vez contra la red (ms). */
+  checkedAt: number
+}
 
 /**
  * Refresco de listas: al arrancar y luego cada 12h mientras TEK siga abierta.
@@ -87,47 +138,62 @@ const BASELINE = `
 `
 
 /**
- * Regla que exime a un sitio ENTERO del filtrado de red.
- *
- * OJO, esto tiene truco y nos costo un bug largo: la forma "obvia"
- * `@@||host^$document` NO SIRVE aqui. El adaptador de Electron de Ghostery
- * decide asi (comprobado en su codigo, `onBeforeRequest`):
- *
- *     if (request.isMainFrame()) { callback({}); return }
- *     const { redirect, match } = this.match(request)
- *
- * O sea: no existe ninguna nocion de "esta pagina esta permitida". Solo casa el
- * filtro contra CADA peticion. Y como las de tipo `document` ya salen antes por
- * el `isMainFrame()`, una excepcion `$document` no llega a exentar nada: las
- * subpeticiones (xhr, imagenes, scripts) se seguian bloqueando igual.
- *
- * `@@*$domain=host` si: casa cualquier peticion cuyo ORIGEN sea esa pagina,
- * incluidas las de terceros. Medido con el motor real (`__ztest__`): con
- * `$document` seguian bloqueadas 4 de 7 peticiones tipicas de YouTube; con
- * esta, 0 de 7. Cubre subdominios (www.youtube.com entra con `youtube.com`).
- */
-function allowRule(host: string): string {
-  return `@@*$domain=${host}`
-}
-
-/**
  * Sitios eximidos del filtrado de RED porque sus anuncios son de PRIMERA PARTE
  * (mismo dominio que el contenido) y bloquearlos rompe el sitio sin quitar nada.
  *
- * YOUTUBE YA NO ESTA AQUI, y es a proposito (2026-07-20). Eximirlo parecia lo
+ * YOUTUBE NO ESTA AQUI, y es a proposito (2026-07-20). Eximirlo parecia lo
  * sensato, pero desactivaba de paso el filtrado COSMETICO y los SCRIPTLETS, que
- * son justo el metodo que funciona — el mismo que usa Brave. El motor ya se baja
- * los scriptlets de uBlock Origin (147 cargados, 34 aplicables a youtube.com) y
- * entre ellos van los `set-constant` que neutralizan el detector de adblock de
- * YouTube. Al eximir el sitio los apagabamos y luego intentabamos hacer su
- * trabajo a mano desde el preload, que es lo que YouTube detectaba. Ahora
- * YouTube va por el camino normal, como en Brave.
+ * son justo el metodo que funciona — el mismo que usa Brave (34 scriptlets de
+ * uBO aplicables a youtube.com, entre ellos los `set-constant` que neutralizan
+ * su detector de adblock). YouTube va por el camino normal, como en Brave.
  *
- * Spotify SI sigue: sus anuncios de audio viajan por su maquina de reproduccion
- * y las listas publicas no los cubren, asi que ahi el defuser de webview.ts
- * sigue siendo la unica capa que funciona (ver [[tek-spotify]]).
+ * Spotify SI: sus anuncios de audio viajan por su maquina de reproduccion y las
+ * listas publicas no los cubren; ahi el defuser de webview.ts es la unica capa
+ * que funciona. Solo se le quita el filtrado de RED (cosmeticos y scriptlets
+ * siguen).
  */
-const SITE_EXCEPTIONS = [allowRule('spotify.com')]
+const NETWORK_EXEMPT = ['spotify.com']
+
+/** Lo que contesta el motor cuando una peticion NO se toca. */
+const NO_MATCH: BlockingResponse = {
+  match: false,
+  redirect: undefined,
+  rewrite: undefined,
+  exception: undefined,
+  filter: undefined,
+  metadata: undefined
+}
+
+/** Host de una URL ('' si no lo tiene). */
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return ''
+  }
+}
+
+/** Host de la PAGINA de una pestana por su id de webContents (el `tabId` del motor). */
+function pageHostOf(wcId: number): string {
+  if (!(wcId >= 0)) return ''
+  const wc = webContents.fromId(wcId)
+  return wc && !wc.isDestroyed() ? hostnameOf(wc.getURL()) : ''
+}
+
+/**
+ * ¿`hostname` es alguno de `domains` o un subdominio suyo? (lo mismo que hacia
+ * la regla `@@*$domain=host` del motor). Las entradas pueden traer puerto o
+ * `www.`: no cuentan.
+ */
+function covers(domains: Iterable<string>, hostname: string): boolean {
+  const h = (hostname || '').toLowerCase().replace(/^www\./, '')
+  if (!h) return false
+  for (const raw of domains) {
+    const d = raw.toLowerCase().replace(/:\d+$/, '').replace(/^www\./, '')
+    if (d && (h === d || h.endsWith(`.${d}`))) return true
+  }
+  return false
+}
 
 interface AdSettings {
   enabled: boolean
@@ -135,7 +201,7 @@ interface AdSettings {
 }
 
 /** Fetch de Chromium (usa los certs del sistema; el node fetch falla en su red). */
-const cFetch = ((url: string) => net.fetch(url)) as unknown as Fetch
+const cFetch = (url: string): Promise<Response> => net.fetch(url)
 
 export class Adblock {
   private readonly session: Electron.Session
@@ -149,7 +215,9 @@ export class Adblock {
 
   private readonly dir = join(app.getPath('userData'), 'adblock')
   private readonly enginePath = join(this.dir, 'engine.bin')
+  private readonly metaPath = join(this.dir, 'meta.json')
   private readonly settingsPath = join(this.dir, 'settings.json')
+  private meta: EngineMeta = { listsHash: '', checkedAt: 0 }
   /**
    * Snapshot de listas EMPAQUETADO con la app (listas + scriptlets del dia del
    * build). En produccion vive en resources/adblock; en dev, en assets/adblock.
@@ -160,6 +228,7 @@ export class Adblock {
   private readonly assetDir = app.isPackaged
     ? join(process.resourcesPath, 'adblock')
     : join(app.getAppPath(), 'assets', 'adblock')
+  /** El siguiente refresco programado (uno solo a la vez). */
   private refreshTimer: NodeJS.Timeout | null = null
 
   /** Diagnostico: de donde salio el motor activo y de que fecha son sus listas. */
@@ -168,9 +237,9 @@ export class Adblock {
   /** Anti-solape + backoff del refresco (un fallo transitorio no espera 12h). */
   private refreshing = false
   private refreshRetries = 0
-  /** resources.json empaquetado (scriptlets), leido bajo demanda una vez. */
-  private packedResources: string | null = null
-  private packedResourcesTried = false
+  /** resources.json del instalador (scriptlets) y su huella, leido una vez. */
+  private packed: { data: string; checksum: string } | null = null
+  private packedTried = false
 
   constructor(partition: string) {
     this.session = electronSession.fromPartition(partition)
@@ -180,27 +249,40 @@ export class Adblock {
   async init(): Promise<void> {
     await mkdir(this.dir, { recursive: true }).catch(() => undefined)
     await this.loadSettings()
+    await this.loadMeta()
+    const res = await this.packagedResources()
 
-    // 1) Cache de un refresco previo (lo mas fresco, instantaneo, offline).
-    if (!(await this.loadEngine(this.enginePath, 'cache'))) {
+    // 1) Cache de un refresco previo (lo mas fresco, instantaneo, offline). Sus
+    // scriptlets se alinean con los del instalador (una version nueva de TEK
+    // trae los suyos).
+    if (await this.loadEngine(this.enginePath, 'cache')) {
+      this.pinResources(res)
+    } else if (await this.loadSnapshot(res)) {
       // 2) Snapshot empaquetado: listas + scriptlets del dia del build. Cubre la
-      // instalacion fresca aunque no haya red o la red bloquee las listas.
-      if (!(await this.loadSnapshot())) {
-        // 3) Baseline embebido: nunca arrancar del todo sin proteccion.
-        try {
-          this.setBlocker(ElectronBlocker.parse(BASELINE, { enableCompression: true }))
-          this.source = 'baseline'
-          this.updatedAt = null
-        } catch (e) {
-          console.error('[TEK Adblock] no se pudo crear el motor baseline:', e)
-        }
+      // instalacion fresca aunque no haya red o la red bloquee las listas. Se
+      // deja en cache para que el siguiente arranque no vuelva a parsearlo.
+      void this.saveEngine()
+    } else {
+      // 3) Baseline embebido: nunca arrancar del todo sin proteccion.
+      try {
+        this.setBlocker(ElectronBlocker.parse(BASELINE, { enableCompression: true }))
+        this.source = 'baseline'
+        this.updatedAt = null
+      } catch (e) {
+        console.error('[TEK Adblock] no se pudo crear el motor baseline:', e)
       }
     }
+    if (!res) {
+      // En el instalador SIEMPRE esta. En dev falta si no se genero el snapshot.
+      console.warn('[TEK Adblock] sin resources.json empaquetado: no hay scriptlets (pnpm snapshot:adblock)')
+    }
 
-    // 4) En segundo plano: listas completas frescas via net.fetch, ahora y
-    // luego cada 12h (ver REFRESH_MS).
-    void this.refresh()
-    this.refreshTimer = setInterval(() => void this.refresh(), REFRESH_MS)
+    // 4) Listas frescas en segundo plano. Si la cache se comprobo hace menos de
+    // 12 h, no hace falta mirar ahora: se programa para cuando toque (antes se
+    // refrescaba en CADA arranque y eso era el congelon).
+    const last = this.source === 'cache' ? this.meta.checkedAt || this.updatedAt || 0 : 0
+    const age = Date.now() - last
+    this.scheduleRefresh(age >= 0 && age < REFRESH_MS ? REFRESH_MS - age : 0)
   }
 
   /** Carga el motor desde un .bin serializado; true si funciono. Fija origen/fecha. */
@@ -219,12 +301,13 @@ export class Adblock {
   }
 
   /** Motor desde el snapshot empaquetado: listas (lists.txt) + scriptlets (resources.json). */
-  private async loadSnapshot(): Promise<boolean> {
+  private async loadSnapshot(res: { data: string; checksum: string } | null): Promise<boolean> {
     try {
       const text = await readFile(join(this.assetDir, 'lists.txt'), 'utf8')
+      // Primera vez en este equipo (o motor de otra version): se parsea AQUI,
+      // como siempre, para que la primera pagina ya salga protegida del todo.
       const engine = ElectronBlocker.parse(text, { enableCompression: true })
-      const resources = await this.packagedResources()
-      if (resources) engine.updateResources(resources, RESOURCES_CHECKSUM)
+      if (res) engine.updateResources(res.data, res.checksum)
       this.setBlocker(engine)
       this.source = 'snapshot'
       this.updatedAt = await stat(join(this.assetDir, 'lists.txt'))
@@ -236,14 +319,49 @@ export class Adblock {
     }
   }
 
-  /** Lee (una sola vez) el resources.json empaquetado — fallback de scriptlets. */
-  private async packagedResources(): Promise<string | null> {
-    if (this.packedResourcesTried) return this.packedResources
-    this.packedResourcesTried = true
-    this.packedResources = await readFile(join(this.assetDir, 'resources.json'), 'utf8').catch(
-      () => null
-    )
-    return this.packedResources
+  /** Lee (una sola vez) el resources.json del instalador y calcula su huella. */
+  private async packagedResources(): Promise<{ data: string; checksum: string } | null> {
+    if (this.packedTried) return this.packed
+    this.packedTried = true
+    const data = await readFile(join(this.assetDir, 'resources.json'), 'utf8').catch(() => null)
+    this.packed = data ? { data, checksum: `tek-${fingerprint(data)}` } : null
+    return this.packed
+  }
+
+  /**
+   * Los scriptlets del motor activo pasan a ser los del instalador si no lo
+   * eran (cache de una version anterior, o de cuando se bajaban de internet).
+   */
+  private pinResources(res: { data: string; checksum: string } | null): void {
+    if (!res || !this.blocker || this.blocker.resources.checksum === res.checksum) return
+    try {
+      this.blocker.updateResources(res.data, res.checksum)
+      void this.saveEngine()
+    } catch (e) {
+      console.error('[TEK Adblock] no se pudieron poner los scriptlets del instalador:', e)
+    }
+  }
+
+  /** Guarda el motor activo en cache (para arrancar sin parsear). */
+  private async saveEngine(): Promise<void> {
+    if (!this.blocker) return
+    await writeAtomic(this.enginePath, this.blocker.serialize()).catch(() => undefined)
+  }
+
+  private async loadMeta(): Promise<void> {
+    try {
+      const m = JSON.parse(await readFile(this.metaPath, 'utf8')) as Partial<EngineMeta>
+      this.meta = {
+        listsHash: typeof m.listsHash === 'string' ? m.listsHash : '',
+        checkedAt: typeof m.checkedAt === 'number' ? m.checkedAt : 0
+      }
+    } catch {
+      /* primera vez: sin meta (se refresca al arrancar) */
+    }
+  }
+
+  private async saveMeta(): Promise<void> {
+    await writeAtomic(this.metaPath, JSON.stringify(this.meta)).catch(() => undefined)
   }
 
   /** Reemplaza el motor activo: re-cablea conteo, allowlist y bloqueo. */
@@ -269,70 +387,167 @@ export class Adblock {
     // timing tardio no es problema.
     const origGet = b.getCosmeticsFilters.bind(b)
     b.getCosmeticsFilters = (payload) => {
+      if (this.userAllowed(payload.hostname)) {
+        return { active: false, extended: [], scripts: [], styles: '' }
+      }
       const ctx = (payload as { callerContext?: { processId?: unknown } }).callerContext
       return typeof ctx?.processId === 'number'
         ? origGet({ ...payload, getInjectionRules: false })
         : origGet(payload)
     }
+    // SITIOS PERMITIDOS sin tocar el motor. Antes se le metian reglas
+    // `@@*$domain=host` con updateFromDiff, y eso cuesta ~460 ms de CPU en el
+    // proceso principal CADA vez que se pone un motor (al arrancar, tras cada
+    // refresco y al pulsar "permitir sitio"): medido en
+    // __ztest__/probe-abw-costes.mjs. Ahora se mira el sitio de ORIGEN de cada
+    // peticion aqui fuera, que es lo mismo que hacia esa regla y no cuesta nada.
+    // "Permitir sitio" = no tocar nada: ni red, ni CSP, ni cosmeticos, ni
+    // scriptlets. Spotify (NETWORK_EXEMPT) solo se libra de la red.
+    // El sitio "permitido" es el de la PESTANA (lo que ves en la barra), asi que
+    // se libra todo lo que pida esa pagina, iframes incluidos. Spotify se mira
+    // como lo miraba el motor: por quien hace la peticion (su referer).
+    const origMatch = b.match.bind(b)
+    b.match = (request: AdRequest, withMetadata?: boolean) => {
+      const page = pageHostOf(request.tabId)
+      if (this.userAllowed(page)) return NO_MATCH
+      const details = request._originalRequestDetails as { referrer?: string } | undefined
+      if (covers(NETWORK_EXEMPT, hostnameOf(details?.referrer ?? '') || page)) return NO_MATCH
+      return origMatch(request, withMetadata)
+    }
+    const origCSP = b.getCSPDirectives.bind(b)
+    b.getCSPDirectives = (request: AdRequest) =>
+      this.userAllowed(request.hostname) || this.userAllowed(pageHostOf(request.tabId))
+        ? undefined
+        : origCSP(request)
     b.on('request-blocked', (req: AdRequest) => {
       const id = req.tabId ?? -1
       this.blockedByWc.set(id, (this.blockedByWc.get(id) ?? 0) + 1)
       this.onBlocked?.()
     })
-    this.applySiteExceptions()
-    this.applyAllowlist()
     this.applyEnabled()
   }
 
-  /** Exime ciertas paginas first-party del filtrado de RED (ver SITE_EXCEPTIONS). */
-  private applySiteExceptions(): void {
-    if (!this.blocker) return
-    try {
-      this.blocker.updateFromDiff({ added: SITE_EXCEPTIONS, removed: [] })
-    } catch (e) {
-      console.error('[TEK Adblock] no se pudieron aplicar las exenciones de sitio:', e)
-    }
+  /** ¿Sitio permitido por ti en el escudo (o subdominio suyo)? */
+  private userAllowed(hostname: string): boolean {
+    return this.allow.size > 0 && covers(this.allow, hostname)
   }
 
-  /** Descarga listas completas + scriptlets, cachea y reemplaza el motor. */
+  /** Programa el siguiente refresco (uno solo a la vez). */
+  private scheduleRefresh(ms: number): void {
+    if (this.refreshTimer) clearTimeout(this.refreshTimer)
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null
+      void this.refresh()
+    }, Math.max(0, ms))
+  }
+
+  /**
+   * Descarga las listas, y SOLO si cambiaron construye un motor nuevo, en un
+   * proceso aparte. Los scriptlets son siempre los del instalador.
+   */
   private async refresh(): Promise<void> {
     if (this.refreshing) return
     this.refreshing = true
     try {
-      // Descarga TOLERANTE: cada lista por su cuenta (allSettled). `fromLists`
-      // usa Promise.all — todo-o-nada: una sola URL caida tumbaba el refresco
-      // entero. Asi, si 8 de 9 llegan, refrescamos con esas 8.
-      const settled = await Promise.allSettled(LISTS.map((u) => cFetch(u).then((r) => r.text())))
+      // Descarga TOLERANTE: cada lista por su cuenta (allSettled). Si 8 de 9
+      // llegan, refrescamos con esas 8. Una respuesta de error (404, pagina
+      // de un portal cautivo) no es una lista: se descarta.
+      const settled = await Promise.allSettled(
+        LISTS.map(async (u) => {
+          const r = await cFetch(u)
+          if (!r.ok) throw new Error(`${u}: HTTP ${r.status}`)
+          return stripTrustedScriptlets(u, await r.text())
+        })
+      )
       const texts = settled
         .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
         .map((r) => r.value)
       if (texts.length === 0) throw new Error('ninguna lista disponible')
-      const fresh = ElectronBlocker.parse(texts.join('\n'), { enableCompression: true })
-      // Scriptlets: frescos si se pueden bajar; si no (raw.githubusercontent
-      // bloqueado en la red), los del snapshot empaquetado — nunca quedarse SIN
-      // scriptlets, que son justo lo que desarma el muro de YouTube.
-      let resources: string | null = null
-      try {
-        resources = await fetchResources(cFetch)
-      } catch {
-        resources = await this.packagedResources()
+      const text = texts.join('\n')
+      const listsHash = fingerprint(text)
+      const res = await this.packagedResources()
+
+      if (
+        listsHash === this.meta.listsHash &&
+        this.blocker &&
+        (this.source === 'cache' || this.source === 'live')
+      ) {
+        // Las mismas listas que ya tiene el motor: nada que parsear.
+        this.meta.checkedAt = Date.now()
+        await this.saveMeta()
+      } else {
+        const buf = await this.buildEngine(text, res)
+        const fresh = ElectronBlocker.deserialize(buf)
+        await writeAtomic(this.enginePath, buf).catch(() => undefined)
+        this.meta = { listsHash, checkedAt: Date.now() }
+        await this.saveMeta()
+        this.setBlocker(fresh)
       }
-      if (resources) fresh.updateResources(resources, RESOURCES_CHECKSUM)
-      await writeFile(this.enginePath, Buffer.from(fresh.serialize())).catch(() => undefined)
-      this.setBlocker(fresh)
       this.source = 'live'
       this.updatedAt = Date.now()
       this.refreshRetries = 0
+      this.scheduleRefresh(REFRESH_MS)
     } catch (e) {
       console.error('[TEK Adblock] refresco de listas fallido (sigo con lo que tengo):', e)
-      // Backoff 1,2,4,8,16 min (tope 30): reintenta pronto, no a las 12h. El
-      // interval de 12h sigue para la frescura normal cuando todo va bien.
+      // Backoff 1,2,4,8,16 min (tope 30): reintenta pronto, no a las 12h.
       const delayMin = Math.min(30, 2 ** this.refreshRetries)
       this.refreshRetries = Math.min(this.refreshRetries + 1, 5)
-      setTimeout(() => void this.refresh(), delayMin * 60_000)
+      this.scheduleRefresh(delayMin * 60_000)
     } finally {
       this.refreshing = false
     }
+  }
+
+  /**
+   * Construye el motor serializado. En un proceso aparte (worker.ts) para no
+   * congelar TEK; si ese proceso no arranca o falla, aqui mismo como antes:
+   * mejor un congelon que quedarse con listas viejas para siempre.
+   */
+  private async buildEngine(
+    text: string,
+    res: { data: string; checksum: string } | null
+  ): Promise<Uint8Array> {
+    try {
+      return await this.buildElsewhere(text, res)
+    } catch (e) {
+      console.error('[TEK Adblock] el proceso del bloqueador fallo; parseo aqui:', e)
+      const engine = ElectronBlocker.parse(text, { enableCompression: true })
+      if (res) engine.updateResources(res.data, res.checksum)
+      return engine.serialize()
+    }
+  }
+
+  private buildElsewhere(
+    text: string,
+    res: { data: string; checksum: string } | null
+  ): Promise<Uint8Array> {
+    return new Promise((resolve, reject) => {
+      const child = utilityProcess.fork(join(import.meta.dirname, 'adblockWorker.js'), [], {
+        serviceName: 'TEK bloqueador',
+        stdio: 'ignore'
+      })
+      let settled = false
+      const finish = (fn: () => void): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        fn()
+        try {
+          child.kill()
+        } catch {
+          /* ya salio */
+        }
+      }
+      // Parsear lleva ~1,5 s; con 90 s de margen, algo se colgo.
+      const timer = setTimeout(() => finish(() => reject(new Error('sin respuesta en 90 s'))), 90_000)
+      child.once('message', (m: { ok?: boolean; buf?: Uint8Array; error?: string }) => {
+        finish(() =>
+          m?.ok && m.buf ? resolve(new Uint8Array(m.buf)) : reject(new Error(m?.error ?? 'fallo'))
+        )
+      })
+      child.once('exit', (code) => finish(() => reject(new Error(`salio con codigo ${code}`))))
+      child.postMessage({ text, resources: res?.data ?? null, checksum: res?.checksum ?? '' })
+    })
   }
 
   // --- Estado / control ------------------------------------------------------
@@ -347,19 +562,6 @@ export class Adblock {
     }
   }
 
-  /** Reaplica las excepciones de la allowlist al motor actual. */
-  private applyAllowlist(): void {
-    if (!this.blocker || this.allow.size === 0) return
-    const added = [...this.allow].map(allowRule)
-    try {
-      this.blocker.updateFromDiff({ added, removed: [] })
-    } catch (e) {
-      // Antes esto se tragaba el fallo en silencio y no habia forma de saber
-      // que un sitio permitido seguia filtrado. Que se vea.
-      console.error('[TEK Adblock] no se pudo aplicar la allowlist:', e)
-    }
-  }
-
   setEnabled(on: boolean): boolean {
     this.enabled = on
     this.applyEnabled()
@@ -367,17 +569,15 @@ export class Adblock {
     return this.enabled
   }
 
-  /** Permite o vuelve a bloquear en un dominio concreto. */
+  /**
+   * Permite o vuelve a bloquear en un dominio concreto. Instantaneo: el motor
+   * no se toca (ver los envoltorios de setBlocker). Vale desde la siguiente
+   * peticion; lo ya cargado se ve al recargar, como en cualquier bloqueador.
+   */
   setSiteAllowed(host: string, allowed: boolean): void {
     if (!host) return
-    const rule = allowRule(host)
-    if (allowed) {
-      this.allow.add(host)
-      this.blocker?.updateFromDiff({ added: [rule], removed: [] })
-    } else {
-      this.allow.delete(host)
-      this.blocker?.updateFromDiff({ added: [], removed: [rule] })
-    }
+    if (allowed) this.allow.add(host)
+    else this.allow.delete(host)
     void this.saveSettings()
   }
 
@@ -397,7 +597,7 @@ export class Adblock {
    * respuesta falsa, que es justo como se pierde una tarde de diagnostico.
    */
   siteUntouched(host: string): boolean {
-    return !this.enabled || this.allow.has(host)
+    return !this.enabled || this.userAllowed(host)
   }
 
   /**
@@ -418,7 +618,7 @@ export class Adblock {
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return []
     // Sitio permitido en el escudo = no tocar nada (espejo de `untouched` en WV.boot;
     // el preload ya lo comprueba, esto es el cinturon del lado main).
-    if (this.allow.has(u.hostname) || this.allow.has(u.hostname.replace(/^www\./, ''))) return []
+    if (this.userAllowed(u.hostname)) return []
     try {
       const { active, scripts } = this.blocker.getCosmeticsFilters({
         url: rawUrl,
@@ -473,11 +673,11 @@ export class Adblock {
 
   private async saveSettings(): Promise<void> {
     const data: AdSettings = { enabled: this.enabled, allowlist: [...this.allow] }
-    await writeFile(this.settingsPath, JSON.stringify(data), 'utf8').catch(() => undefined)
+    await writeAtomic(this.settingsPath, JSON.stringify(data)).catch(() => undefined)
   }
 
   dispose(): void {
-    if (this.refreshTimer) clearInterval(this.refreshTimer)
+    if (this.refreshTimer) clearTimeout(this.refreshTimer)
     this.refreshTimer = null
     if (this.blocker) {
       try {
