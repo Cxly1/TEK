@@ -262,7 +262,7 @@ export class Adblock {
     // webContents.executeJavaScript, que si la pagina aun esta cargando ESPERA
     // a did-stop-loading — los set-constant que desarman el detector llegaban
     // SEGUNDOS despues de que el detector ya hubiera corrido. TEK los inyecta
-    // en document_start desde el preload (ver scriptsFor / WV.adScripts), asi
+    // en document_start desde el preload (ver scriptsFor / WV.boot), asi
     // que al camino del adaptador (sus llamadas llevan el callerContext que
     // pone BlockingContext) se le apagan las injection rules para no meterlos
     // dos veces; sus ESTILOS y reglas por DOM siguen tal cual, que para CSS el
@@ -387,7 +387,7 @@ export class Adblock {
 
   /**
    * ¿TEK debe dejar esta pagina COMPLETAMENTE en paz? (lo pregunta el preload en
-   * WV.siteUntouched, antes de parchear nada).
+   * el arranque de cada pagina, WV.boot, antes de parchear nada).
    *
    * No es lo mismo que `siteAllowed`: apagar el escudo con el interruptor global
    * tambien cuenta. Antes NO contaba, y era un embuste — con el adblock apagado
@@ -416,7 +416,7 @@ export class Adblock {
       return []
     }
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return []
-    // Sitio permitido en el escudo = no tocar nada (espejo de WV.siteUntouched;
+    // Sitio permitido en el escudo = no tocar nada (espejo de `untouched` en WV.boot;
     // el preload ya lo comprueba, esto es el cinturon del lado main).
     if (this.allow.has(u.hostname) || this.allow.has(u.hostname.replace(/^www\./, ''))) return []
     try {

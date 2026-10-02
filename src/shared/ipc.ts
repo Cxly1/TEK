@@ -244,21 +244,17 @@ export const WV = {
   /** El preload pregunta al cargar si SU pestana esta grabando. */
   macroIsRecording: 'wv:macroIsRecording',
   /**
-   * El preload pregunta (SINCRONO, al cargar) si este sitio esta permitido en el
-   * escudo. Si lo esta, TEK no toca la pagina EN ABSOLUTO: ni filtrado de red ni
-   * defusers de anuncios. Sincrono a proposito: la respuesta decide si se
-   * parchean globales antes de que la pagina ejecute su primer script.
+   * Arranque de cada pagina, SINCRONO y en document_start (una sola llamada;
+   * antes eran dos). Devuelve `BootInfo`:
+   *  - `untouched`: el sitio esta permitido en el escudo (o el escudo apagado).
+   *    Entonces TEK no toca la pagina EN ABSOLUTO: ni red ni defusers.
+   *  - `scripts`: los scriptlets del adblock para su URL (los `+js(...)` de uBO).
+   *    Tienen que correr ANTES del primer script de la pagina (asi lo hacen uBO
+   *    y Brave): el camino del adaptador de Ghostery va por executeJavaScript,
+   *    que espera a did-stop-loading, y a YouTube le daba tiempo de sobra a
+   *    disparar su muro anti-adblock antes de que llegara el desarme.
    */
-  siteUntouched: 'wv:siteUntouched',
-  /**
-   * El preload pide (SINCRONO, en document_start) los scriptlets del adblock
-   * para su URL — los `+js(...)` de las listas de uBO. Tienen que ejecutarse
-   * ANTES del primer script de la pagina (asi lo hacen uBO y Brave): el camino
-   * del adaptador de Ghostery va por webContents.executeJavaScript, que espera
-   * a did-stop-loading, y a YouTube le daba tiempo de sobra a disparar su muro
-   * anti-adblock antes de que llegara el desarme.
-   */
-  adScripts: 'wv:adScripts',
+  boot: 'wv:boot',
   /**
    * El preload reporta los metadatos de MediaSession de su pagina (titulo,
    * artista, caratula, si esta sonando y que acciones soporta el sitio).
@@ -267,6 +263,12 @@ export const WV = {
   /** El main manda una accion de reproduccion a la pagina (playpause/pause/next/prev). */
   mediaControl: 'wv:mediaControl'
 } as const
+
+/** Respuesta de WV.boot: lo que una pagina necesita antes de su primer script. */
+export interface BootInfo {
+  untouched: boolean
+  scripts: string[]
+}
 
 /** Metadatos de una pestana, tal como el renderer los necesita para pintar. */
 export interface TabMeta {

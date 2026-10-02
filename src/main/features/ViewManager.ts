@@ -809,12 +809,13 @@ export class ViewManager {
     const view = new WebContentsView({
       webPreferences: {
         partition: PARTITION,
-        // contextIsolation:false a proposito: el preload corre en el MAIN WORLD,
-        // lo unico que hace posible podar los anuncios de video de YouTube en
-        // document-start (hay que sobrescribir el fetch/JSON.parse de la PROPIA
-        // pagina). Mantenemos sandbox + sin nodeIntegration, y el preload no
-        // expone nada a `window`, asi el riesgo queda acotado.
-        contextIsolation: false,
+        // Mundos SEPARADOS: la pagina no comparte prototipos ni variables con
+        // el preload. Lo que tiene que correr junto a sus scripts (scriptlets del
+        // adblock, lact de YouTube, Spotify, MediaSession) lo mete el preload en
+        // document_start con contextBridge.executeInMainWorld — antes que el
+        // primer script de la pagina, como cuando todo vivia en su mundo (ver la
+        // cabecera de preload/webview.ts). Antes iba con contextIsolation:false.
+        contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,
         // El visor PDF de Chromium cuenta como "plugin": sin esto los PDF se

@@ -14,6 +14,7 @@ import {
   WV,
   hostKey,
   type ArcadeStats,
+  type BootInfo,
   type ClearScope,
   type DevSettings,
   type FindOptions,
@@ -715,24 +716,29 @@ function registerIpc(): void {
   // Metadatos de MediaSession de una pagina (titulo/artista/caratula del chip).
   onPage(WV.mediaMeta, (e, payload: unknown) => media?.handleMeta(e.sender, payload))
   handlePage(WV.macroIsRecording, (e) => macros?.isRecordingWc(e.sender.id) ?? false)
-  // "Permitir sitio" en el escudo significa NO TOCAR: ni red ni defusers. El
-  // preload lo pregunta sincrono antes de parchear nada (ver WV.siteUntouched).
+  // Arranque de cada pagina (sincrono, document_start): "permitir sitio" en el
+  // escudo = NO TOCAR nada, y si no, los scriptlets del adblock para su URL —
+  // la pieza que mata el muro anti-adblock de YouTube (ver WV.boot). La URL sale
+  // del marco que pregunta, no de lo que diga la pagina.
+  const NO_BOOT: BootInfo = { untouched: false, scripts: [] }
   onPageSync(
-    WV.siteUntouched,
-    (e, host: unknown) => {
-      const h = typeof host === 'string' ? host.replace(/^www\./, '') : ''
-      e.returnValue = !!h && !!adblock?.siteUntouched(h)
+    WV.boot,
+    (e, asked: unknown) => {
+      const url = e.senderFrame?.url || (typeof asked === 'string' ? asked : '')
+      let host = ''
+      try {
+        host = new URL(url).hostname.replace(/^www\./, '')
+      } catch {
+        host = ''
+      }
+      const untouched = !!host && !!adblock?.siteUntouched(host)
+      const info: BootInfo = {
+        untouched,
+        scripts: untouched || !url ? [] : (adblock?.scriptsFor(url) ?? [])
+      }
+      e.returnValue = info
     },
-    false
-  )
-  // Scriptlets del adblock en document_start: la pieza que mata el muro
-  // anti-adblock de YouTube (ver WV.adScripts y Adblock.scriptsFor).
-  onPageSync(
-    WV.adScripts,
-    (e, url: unknown) => {
-      e.returnValue = typeof url === 'string' ? (adblock?.scriptsFor(url) ?? []) : []
-    },
-    []
+    NO_BOOT
   )
 }
 
