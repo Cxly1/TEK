@@ -69,6 +69,20 @@ export function isJunkHost(host: string): boolean {
 /** Visitas minimas a un host para que TEK lo sugiera (curado, no "lo que abri"). */
 const MIN_SUGGEST_VISITS = 3
 
+/**
+ * Cuanto se guarda el historial (y lo que se aprende de la musica y las
+ * busquedas). Elegido con Migue: 1 año. Lo mas viejo se borra al arrancar y una
+ * vez al dia. Con su ritmo (~8.000 visitas/año) el ⌘K se queda en ~15 ms; sin
+ * limite crecia para siempre (Chrome guarda 90 dias).
+ */
+const RETENTION_DAYS = 365
+/** Cada cuanto se poda lo que pasa de RETENTION_DAYS mientras TEK sigue abierta. */
+const PRUNE_EVERY_MS = 24 * 60 * 60 * 1000
+/** Titulos que cambian sin parar (chats, "(3) mensajes"): se guardan como mucho cada tanto. */
+const TITLE_FLUSH_MS = 2000
+/** Las rutinas recorren 45 dias de visitas: se reutilizan un rato. */
+const ROUTINE_CACHE_MS = 60_000
+
 interface VisitRow {
   host: string
   url: string
@@ -80,18 +94,82 @@ export class Brain {
   private db: Database.Database | null = null
   /** Dominios que el usuario pidio NO aprender (cache en memoria del kv). */
   private readonly ignoredSet = new Set<string>()
+  /** Sentencias preparadas UNA vez (antes se preparaban en cada llamada). */
+  private readonly stmts = new Map<string, Database.Statement>()
+  /** `paused` en memoria: antes era una consulta en CADA visita. */
+  private pausedCache: boolean | null = null
+  /** Titulos pendientes de guardar (visita -> titulo), con freno. */
+  private readonly titleQueue = new Map<number, string>()
+  private titleTimer: NodeJS.Timeout | null = null
+  private pruneTimer: NodeJS.Timeout | null = null
+  /** Sesiones de los ultimos 45 dias (para rutinas), reutilizadas un rato. */
+  private sessionsCache: { at: number; sessions: VisitRow[][] } | null = null
 
   constructor() {
     try {
       const path = join(app.getPath('userData'), 'tek-brain.db')
       this.db = new Database(path)
       this.db.pragma('journal_mode = WAL')
+      // Con WAL, NORMAL es seguro frente a corrupcion (solo un corte de luz
+      // podria perder las ultimas visitas) y se ahorra un fsync por escritura;
+      // antes cada visita y cada cambio de titulo esperaba al disco.
+      this.db.pragma('synchronous = NORMAL')
+      // El -wal no crece sin limite (llego a pesar tanto como la base).
+      this.db.pragma('journal_size_limit = 4194304')
       this.migrate()
       this.loadIgnored()
+      this.prune()
+      this.pruneTimer = setInterval(() => this.prune(), PRUNE_EVERY_MS)
+      this.pruneTimer.unref?.()
     } catch (err) {
       // Modulo nativo desactualizado / disco: seguimos sin cerebro.
       console.error('[TEK Brain] no se pudo abrir la base; aprendizaje desactivado:', err)
       this.db = null
+    }
+  }
+
+  /** Sentencia preparada (y cacheada) para este SQL. */
+  private stmt(sql: string): Database.Statement {
+    let st = this.stmts.get(sql)
+    if (!st) {
+      st = this.db!.prepare(sql)
+      this.stmts.set(sql, st)
+    }
+    return st
+  }
+
+  /** Borra lo que tenga mas de RETENTION_DAYS (historial, musica y busquedas). */
+  private prune(): void {
+    if (!this.db) return
+    const cutoff = Date.now() - RETENTION_DAYS * DAY
+    try {
+      this.db.transaction(() => {
+        this.stmt(`DELETE FROM visits WHERE started_at < ?`).run(cutoff)
+        this.stmt(`DELETE FROM music WHERE started_at < ?`).run(cutoff)
+        this.stmt(`DELETE FROM queries WHERE ts < ?`).run(cutoff)
+      })()
+      this.sessionsCache = null
+    } catch (err) {
+      console.error('[TEK Brain] no se pudo podar el historial:', err)
+    }
+  }
+
+  /** Guarda los titulos pendientes (ver updateTitle). */
+  private flushTitles(): void {
+    if (this.titleTimer) {
+      clearTimeout(this.titleTimer)
+      this.titleTimer = null
+    }
+    if (!this.db || this.titleQueue.size === 0) return
+    const st = this.stmt(`UPDATE visits SET title = ? WHERE id = ?`)
+    const pending = [...this.titleQueue]
+    this.titleQueue.clear()
+    try {
+      this.db.transaction(() => {
+        for (const [id, title] of pending) st.run(title, id)
+      })()
+    } catch (err) {
+      console.error('[TEK Brain] no se pudieron guardar los titulos:', err)
     }
   }
 
@@ -136,17 +214,21 @@ export class Brain {
 
   get paused(): boolean {
     if (!this.db) return true
-    const row = this.db.prepare(`SELECT value FROM kv WHERE key = 'paused'`).get() as
-      | { value: string }
-      | undefined
-    return row?.value === '1'
+    if (this.pausedCache === null) {
+      const row = this.stmt(`SELECT value FROM kv WHERE key = 'paused'`).get() as
+        | { value: string }
+        | undefined
+      this.pausedCache = row?.value === '1'
+    }
+    return this.pausedCache
   }
 
   setPaused(paused: boolean): boolean {
     if (!this.db) return true
-    this.db
-      .prepare(`INSERT INTO kv(key, value) VALUES('paused', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .run(paused ? '1' : '0')
+    this.stmt(
+      `INSERT INTO kv(key, value) VALUES('paused', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run(paused ? '1' : '0')
+    this.pausedCache = paused
     return paused
   }
 
@@ -157,8 +239,7 @@ export class Brain {
     if (!this.db || this.paused || !host || this.ignoredSet.has(host)) return null
     const now = Date.now()
     const d = new Date(now)
-    const info = this.db
-      .prepare(
+    const info = this.stmt(
         `INSERT INTO visits(host, url, title, started_at, hour, dow, bucket)
          VALUES(?, ?, ?, ?, ?, ?, ?)`
       )
@@ -169,34 +250,37 @@ export class Brain {
   /** Suma tiempo de permanencia (foco activo) a una visita. */
   addDwell(visitId: number, ms: number): void {
     if (!this.db || ms <= 0) return
-    this.db.prepare(`UPDATE visits SET dwell_ms = dwell_ms + ? WHERE id = ?`).run(Math.round(ms), visitId)
+    this.stmt(`UPDATE visits SET dwell_ms = dwell_ms + ? WHERE id = ?`).run(Math.round(ms), visitId)
   }
 
-  /** El titulo de una visita puede llegar tarde (page-title-updated). */
+  /**
+   * El titulo de una visita puede llegar tarde (page-title-updated). Hay sitios
+   * que lo cambian cada segundo ("(3) mensajes", relojes, reproductores): se
+   * guarda el ultimo como mucho cada TITLE_FLUSH_MS, no una escritura por cambio.
+   */
   updateTitle(visitId: number, title: string): void {
     if (!this.db || !title) return
-    this.db.prepare(`UPDATE visits SET title = ? WHERE id = ?`).run(title, visitId)
+    this.titleQueue.set(visitId, title)
+    if (!this.titleTimer) this.titleTimer = setTimeout(() => this.flushTitles(), TITLE_FLUSH_MS)
   }
 
   /** Registra que empezo a sonar algo (solo en hosts de musica). */
   recordMusic(host: string, url: string, title: string): void {
     if (!this.db || this.paused || !title || !isMusicHost(host) || this.ignoredSet.has(host)) return
     // Evita duplicar el mismo titulo si se reanuda el audio en pocos minutos.
-    const last = this.db
-      .prepare(`SELECT title, started_at FROM music ORDER BY started_at DESC LIMIT 1`)
+    const last = this.stmt(`SELECT title, started_at FROM music ORDER BY started_at DESC LIMIT 1`)
       .get() as { title: string; started_at: number } | undefined
     if (last && last.title === title && Date.now() - last.started_at < 10 * 60_000) return
     const now = Date.now()
     const h = new Date(now).getHours()
-    this.db
-      .prepare(`INSERT INTO music(host, url, title, started_at, hour, bucket) VALUES(?, ?, ?, ?, ?, ?)`)
+    this.stmt(`INSERT INTO music(host, url, title, started_at, hour, bucket) VALUES(?, ?, ?, ?, ?, ?)`)
       .run(host, url, title, now, h, bucketOf(h))
   }
 
   /** Registra una busqueda del ⌘K (para autocompletado futuro). */
   recordQuery(text: string): void {
     if (!this.db || this.paused || !text.trim()) return
-    this.db.prepare(`INSERT INTO queries(text, ts) VALUES(?, ?)`).run(text.trim(), Date.now())
+    this.stmt(`INSERT INTO queries(text, ts) VALUES(?, ?)`).run(text.trim(), Date.now())
   }
 
   // --- Conocimiento ----------------------------------------------------------
@@ -214,8 +298,7 @@ export class Brain {
     if (!this.db) return []
     const now = Date.now()
     const where = bucket ? `WHERE bucket = @bucket` : ``
-    const rows = this.db
-      .prepare(
+    const rows = this.stmt(
         `SELECT host,
                 SUM(
                   (CASE
@@ -245,7 +328,7 @@ export class Brain {
         limit: limit + exclude.size + 24
       }) as { host: string; score: number }[]
 
-    const latest = this.db.prepare(
+    const latest = this.stmt(
       `SELECT url, title FROM visits WHERE host = ? ORDER BY started_at DESC LIMIT 1`
     )
     const out: Suggestion[] = []
@@ -276,10 +359,9 @@ export class Brain {
 
   music(): MusicInfo {
     if (!this.db) return { last: null, top: [] }
-    const last = (this.db.prepare(`SELECT host, url, title, started_at AS at FROM music ORDER BY started_at DESC LIMIT 1`).get() ??
+    const last = (this.stmt(`SELECT host, url, title, started_at AS at FROM music ORDER BY started_at DESC LIMIT 1`).get() ??
       null) as MusicNow | null
-    const top = this.db
-      .prepare(`SELECT title, host, COUNT(*) AS count FROM music GROUP BY title ORDER BY count DESC, MAX(started_at) DESC LIMIT 8`)
+    const top = this.stmt(`SELECT title, host, COUNT(*) AS count FROM music GROUP BY title ORDER BY count DESC, MAX(started_at) DESC LIMIT 8`)
       .all() as MusicTop[]
     return { last, top }
   }
@@ -290,15 +372,20 @@ export class Brain {
    * sitios-de-apertura que mas se repite. Si una combinacion aparece con
    * suficiente soporte, es una rutina candidata a automatizar.
    */
-  routineFor(bucket: string): Routine | null {
-    if (!this.db) return null
-    const since = Date.now() - 45 * DAY
-    const visits = this.db
-      .prepare(`SELECT host, url, title, started_at FROM visits WHERE started_at >= ? ORDER BY started_at ASC`)
-      .all(since) as VisitRow[]
-    if (visits.length === 0) return null
-
-    // Sesionizar: corta cuando hay >30 min de hueco entre visitas consecutivas.
+  /**
+   * Sesiones de navegacion de los ultimos 45 dias (cortes de >30 min). Una sola
+   * lectura que se reutiliza un minuto: el panel pedia las 4 franjas seguidas y
+   * cada una volvia a cargar 45 dias de visitas.
+   */
+  private recentSessions(): VisitRow[][] {
+    if (!this.db) return []
+    const now = Date.now()
+    if (this.sessionsCache && now - this.sessionsCache.at < ROUTINE_CACHE_MS) {
+      return this.sessionsCache.sessions
+    }
+    const visits = this.stmt(
+      `SELECT host, url, title, started_at FROM visits WHERE started_at >= ? ORDER BY started_at ASC`
+    ).all(now - 45 * DAY) as VisitRow[]
     const GAP = 30 * 60_000
     const sessions: VisitRow[][] = []
     let cur: VisitRow[] = []
@@ -310,6 +397,14 @@ export class Brain {
       cur.push(v)
     }
     if (cur.length) sessions.push(cur)
+    this.sessionsCache = { at: now, sessions }
+    return sessions
+  }
+
+  routineFor(bucket: string): Routine | null {
+    if (!this.db) return null
+    const sessions = this.recentSessions()
+    if (sessions.length === 0) return null
 
     // Sesiones cuyo arranque cae en la franja pedida.
     const inBucket = sessions.filter((s) => bucketOf(new Date(s[0].started_at).getHours()) === bucket)
@@ -342,7 +437,7 @@ export class Brain {
     // Umbral: visto >=3 veces y en >=40% de las sesiones de la franja.
     if (best.support < 3 || best.support / inBucket.length < 0.4) return null
 
-    const latest = this.db.prepare(`SELECT url, title FROM visits WHERE host = ? ORDER BY started_at DESC LIMIT 1`)
+    const latest = this.stmt(`SELECT url, title FROM visits WHERE host = ? ORDER BY started_at DESC LIMIT 1`)
     const steps: RoutineStep[] = best.hosts.map((host) => {
       const rep = latest.get(host) as { url: string; title: string } | undefined
       return { host, url: rep?.url ?? `https://${host}`, title: rep?.title || host }
@@ -361,7 +456,7 @@ export class Brain {
     if (!this.db) {
       return { paused: true, totalVisits: 0, bucket, topSites: [], topMusic: [], routines: [] }
     }
-    const totalVisits = (this.db.prepare(`SELECT COUNT(*) AS c FROM visits`).get() as { c: number }).c
+    const totalVisits = (this.stmt(`SELECT COUNT(*) AS c FROM visits`).get() as { c: number }).c
     const routines: Routine[] = []
     for (const b of ['manana', 'tarde', 'noche', 'madrugada']) {
       const r = this.routineFor(b)
@@ -381,12 +476,15 @@ export class Brain {
 
   forget(host: string): void {
     if (!this.db || !host) return
-    this.db.prepare(`DELETE FROM visits WHERE host = ?`).run(host)
-    this.db.prepare(`DELETE FROM music WHERE host = ?`).run(host)
+    this.sessionsCache = null
+    this.stmt(`DELETE FROM visits WHERE host = ?`).run(host)
+    this.stmt(`DELETE FROM music WHERE host = ?`).run(host)
   }
 
   wipe(): void {
     if (!this.db) return
+    this.sessionsCache = null
+    this.titleQueue.clear()
     this.db.exec(`DELETE FROM visits; DELETE FROM music; DELETE FROM queries;`)
   }
 
@@ -402,6 +500,7 @@ export class Brain {
     opts: { query?: string; limit?: number; offset?: number; distinct?: boolean } = {}
   ): HistoryEntry[] {
     if (!this.db) return []
+    this.flushTitles()
     const limit = Math.min(Math.max(opts.limit ?? 300, 1), 2000)
     const offset = Math.max(opts.offset ?? 0, 0)
     const q = (opts.query ?? '').trim()
@@ -409,8 +508,7 @@ export class Brain {
       const like = `%${q}%`
       // En SQLite, las columnas sueltas junto a MAX() vienen de la fila del
       // maximo: exactamente la visita mas reciente de cada URL.
-      const rows = this.db
-        .prepare(
+      const rows = this.stmt(
           `SELECT id, host, url, title, MAX(started_at) AS at FROM visits
            WHERE title LIKE ? OR url LIKE ? OR host LIKE ?
            GROUP BY url ORDER BY at DESC LIMIT ?`
@@ -422,16 +520,14 @@ export class Brain {
     }
     if (q) {
       const like = `%${q}%`
-      return this.db
-        .prepare(
+      return this.stmt(
           `SELECT id, host, url, title, started_at AS at FROM visits
            WHERE title LIKE ? OR url LIKE ? OR host LIKE ?
            ORDER BY started_at DESC LIMIT ? OFFSET ?`
         )
         .all(like, like, like, limit, offset) as HistoryEntry[]
     }
-    return this.db
-      .prepare(
+    return this.stmt(
         `SELECT id, host, url, title, started_at AS at FROM visits
          ORDER BY started_at DESC LIMIT ? OFFSET ?`
       )
@@ -446,8 +542,7 @@ export class Brain {
     if (!this.db) return []
     const text = q.trim()
     if (!text) return []
-    const rows = this.db
-      .prepare(
+    const rows = this.stmt(
         `SELECT text, MAX(ts) AS ts FROM queries WHERE text LIKE ?
          GROUP BY text COLLATE NOCASE ORDER BY ts DESC LIMIT ?`
       )
@@ -458,13 +553,17 @@ export class Brain {
   /** Borra una visita concreta del historial. */
   deleteVisit(id: number): void {
     if (!this.db) return
-    this.db.prepare(`DELETE FROM visits WHERE id = ?`).run(id)
+    this.sessionsCache = null
+    this.titleQueue.delete(id)
+    this.stmt(`DELETE FROM visits WHERE id = ?`).run(id)
   }
 
   /** Borra el historial: todo, o solo lo posterior a `sinceMs` (epoch ms). */
   clearHistory(sinceMs?: number): void {
     if (!this.db) return
-    if (sinceMs && sinceMs > 0) this.db.prepare(`DELETE FROM visits WHERE started_at >= ?`).run(sinceMs)
+    this.sessionsCache = null
+    this.flushTitles()
+    if (sinceMs && sinceMs > 0) this.stmt(`DELETE FROM visits WHERE started_at >= ?`).run(sinceMs)
     else this.db.exec(`DELETE FROM visits`)
   }
 
@@ -472,7 +571,7 @@ export class Brain {
 
   private loadIgnored(): void {
     if (!this.db) return
-    const row = this.db.prepare(`SELECT value FROM kv WHERE key = 'ignored'`).get() as
+    const row = this.stmt(`SELECT value FROM kv WHERE key = 'ignored'`).get() as
       | { value: string }
       | undefined
     if (!row?.value) return
@@ -485,8 +584,7 @@ export class Brain {
 
   private saveIgnored(): void {
     if (!this.db) return
-    this.db
-      .prepare(
+    this.stmt(
         `INSERT INTO kv(key, value) VALUES('ignored', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`
       )
       .run(JSON.stringify([...this.ignoredSet]))
@@ -515,11 +613,21 @@ export class Brain {
   }
 
   dispose(): void {
+    if (this.pruneTimer) clearInterval(this.pruneTimer)
+    this.pruneTimer = null
+    this.flushTitles()
+    try {
+      // Vuelca el -wal a la base y lo deja a cero al salir.
+      this.db?.pragma('wal_checkpoint(TRUNCATE)')
+    } catch {
+      /* otra conexion lo tiene: se hara en el proximo arranque */
+    }
     try {
       this.db?.close()
     } catch {
       /* ya cerrada */
     }
     this.db = null
+    this.stmts.clear()
   }
 }

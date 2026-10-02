@@ -248,12 +248,17 @@
    Contorno dorado iluminado + halo que respira para distinguirlo de un vistazo
    de las pestanas (que son planas). Se alinea con la base de las pestanas. */
 .tab-new {
+  position: relative;
+  /* Su propio contexto de apilado: los halos (::before/::after, z-index -1)
+     quedan ENTRE el fondo del boton y el "+", sin taparlo. */
+  isolation: isolate;
   align-self: flex-end;
   display: grid;
   place-items: center;
   width: 28px;
   height: 28px;
-  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  /* El contorno visible lo pintan los halos; este solo reserva su pixel. */
+  border: 1px solid transparent;
   border-radius: 8px;
   background: color-mix(in srgb, var(--gold) 7%, transparent);
   color: var(--gold);
@@ -261,16 +266,43 @@
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
-  box-shadow:
-    0 0 6px var(--gold-glow),
-    inset 0 0 5px color-mix(in srgb, var(--gold) 14%, transparent);
-  animation: plus-glow 2.8s ease-in-out infinite;
   transition:
     background 0.14s ease,
     color 0.14s ease,
     border-color 0.14s ease,
     box-shadow 0.14s ease,
     transform 0.12s ease;
+}
+/* Respiracion del halo dorado SIN repintar: dos capas fijas, el reposo y el
+   pico de la respiracion de siempre, que se funden con opacity (eso lo compone
+   la GPU sola). Antes se animaba box-shadow/border-color y la barra se
+   repintaba en cada frame mientras TEK estuviera abierta. En los extremos se
+   ve exactamente lo de antes: son los dos estados de aquella animacion. */
+.tab-new::before,
+.tab-new::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border: 1px solid;
+  border-radius: inherit;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+}
+.tab-new::before {
+  border-color: color-mix(in srgb, var(--gold) 48%, transparent);
+  box-shadow:
+    0 0 5px var(--gold-glow),
+    inset 0 0 5px color-mix(in srgb, var(--gold) 12%, transparent);
+  animation: plus-glow-rest 2.8s ease-in-out infinite;
+}
+.tab-new::after {
+  border-color: color-mix(in srgb, var(--gold) 80%, transparent);
+  box-shadow:
+    0 0 12px var(--gold),
+    inset 0 0 7px color-mix(in srgb, var(--gold) 22%, transparent);
+  opacity: 0;
+  animation: plus-glow-peak 2.8s ease-in-out infinite;
 }
 .tab-new:hover {
   background: color-mix(in srgb, var(--gold) 18%, transparent);
@@ -280,26 +312,31 @@
     0 0 14px var(--gold),
     inset 0 0 8px color-mix(in srgb, var(--gold) 30%, transparent);
   transform: translateY(-1px);
+}
+.tab-new:hover::before,
+.tab-new:hover::after {
   animation: none;
+  opacity: 0;
 }
 .tab-new:active {
   transform: translateY(0);
 }
-/* Respiracion del halo dorado: sutil, para que el "+" llame sin distraer.
-   Anima box-shadow/border (no layout), corre en GPU como el resto de dorados. */
-@keyframes plus-glow {
+@keyframes plus-glow-rest {
   0%,
   100% {
-    box-shadow:
-      0 0 5px var(--gold-glow),
-      inset 0 0 5px color-mix(in srgb, var(--gold) 12%, transparent);
-    border-color: color-mix(in srgb, var(--gold) 48%, transparent);
+    opacity: 1;
   }
   50% {
-    box-shadow:
-      0 0 12px var(--gold),
-      inset 0 0 7px color-mix(in srgb, var(--gold) 22%, transparent);
-    border-color: color-mix(in srgb, var(--gold) 80%, transparent);
+    opacity: 0;
+  }
+}
+@keyframes plus-glow-peak {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
   }
 }
 
@@ -378,9 +415,24 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: group-shine 3.4s linear infinite;
+  /* Dos pasadas al formarse el grupo y luego quieto (eligio Migue, 2026-10): el
+     brillo anima background-position, que obliga a repintar en cada frame; en
+     bucle infinito la barra no paraba nunca. Al pasar el raton vuelve a brillar
+     mientras dure el hover (otro nombre de animacion = arranca de nuevo). */
+  animation: group-shine 3.4s linear 2;
+}
+.tab-group-label:hover .tab-group-name {
+  animation: group-shine-hover 3.4s linear infinite;
 }
 @keyframes group-shine {
+  0% {
+    background-position: 130% 0;
+  }
+  100% {
+    background-position: -130% 0;
+  }
+}
+@keyframes group-shine-hover {
   0% {
     background-position: 130% 0;
   }
