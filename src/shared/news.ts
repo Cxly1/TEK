@@ -31,6 +31,17 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    version: '0.6.0',
+    date: '2026-10-03',
+    title: 'Más seguro y más rápido',
+    items: [
+      'Los videos responden al instante, y la pantalla completa ya ocupa toda la pantalla.',
+      'Motor nuevo de Chromium, con los últimos arreglos de seguridad.',
+      'Más seguro: TEK te pregunta antes de abrir un programa descargado o una app externa.',
+      'Gasta menos batería cuando no estás mirando la barra.'
+    ]
+  },
+  {
     version: '0.5.0',
     date: '2026-09-29',
     title: 'Noche, Día y Borgoña',
