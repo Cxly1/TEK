@@ -141,9 +141,92 @@ function mainWorld(cfg: MainWorldConfig): void {
       )
     }
     if (parts.length === 0) return
+
+    // --- La compuerta de JSON.stringify (medido, 2026-10-03) --------------------
+    // "Los videos tardan en responder": con los scriptlets de YouTube, pausar con
+    // la k tardaba ~900 ms (21 sin ellos), adelantar ~2,5 s (45) y arrancar ~3,8 s
+    // (1,6). Medido pieza a pieza en YouTube de verdad (__ztest__/probe-video.mjs):
+    // la red, los cosmeticos y el resto de este preload no cuestan nada medible, y
+    // de los scriptlets, quitando SOLO las 6 reglas `edit-inbound-object` sobre
+    // JSON.stringify queda igual que sin nada. Esas reglas CLONAN cada objeto que
+    // la pagina serializa (stringify + parse) y le pasan un JSONPath: un stringify
+    // de 25 KB pasaba de 0,07 ms a 14 (__ztest__/probe-scriptlet-cadena.mjs), y
+    // YouTube serializa sin parar (registros, estadisticas, cada peticion).
+    // Pero todas empiezan por `[?.CLAVE]`: solo pueden editar un objeto que TENGA
+    // esa clave en la raiz, o un array con elementos que la tengan (asi evalua uBO
+    // un `[?...]` sobre un array; medido). La COMPUERTA manda a la cadena de uBO
+    // solo esos (y los que traen toJSON, que podrian convertirse en uno); el resto
+    // va al stringify nativo. Mismas ediciones, mismos anuncios fuera, sin clon.
+    // Si una regla nueva no encaja (otra forma de JSONPath, otro scriptlet que
+    // apunte a JSON), la compuerta no se pone y todo va como antes.
+    //
+    // De paso, toString PLANO: cada scriptlet aislado trae SU proxyApplyFn y cada
+    // uno envuelve otra vez Function.prototype.toString para disfrazar sus
+    // proxies (12 capas en YouTube; en uBO es una sola copia compartida). El plano
+    // contesta las funciones normales con el nativo, que es lo que acabarian
+    // dando las 12 capas (1,5 -> 0,3 us), solo manda los proxies por la cadena de
+    // disfraces y disfraza tambien la compuerta.
+
+    // Argumentos de la llamada final de un scriptlet de Ghostery:
+    // `(...[`a1`,`a2`,...,`{{10}}`].filter(...).map(decodeURIComponent))`.
+    const argsOf = (code: string): string[] | null => {
+      const m = /\}\)\(\.\.\.\[((?:`(?:[^`\\]|\\.)*`,?)+)\]\.filter\(/.exec(code.slice(-4000))
+      if (!m) return null
+      const out: string[] = []
+      for (const a of m[1].matchAll(/`((?:[^`\\]|\\.)*)`/g)) {
+        let v = a[1].replace(/\\(.)/g, '$1')
+        if (/^\{\{\d+\}\}$/.test(v)) continue
+        try {
+          v = decodeURIComponent(v)
+        } catch {
+          /* argumento sin codificar: tal cual */
+        }
+        out.push(v)
+      }
+      return out
+    }
+    let gateKeys: string[] | null = null
+    {
+      const keys = new Set<string>()
+      let ok = true
+      for (const code of seen) {
+        const a = argsOf(code)
+        // El OBJETIVO de un scriptlet de uBO es su primer argumento. Que el texto
+        // de otro lo LLAME (la regla anti-SSAP hace JSON.stringify(...)) no lo
+        // envuelve; uno que apunte a JSON y no sea edit-inbound, apaga la compuerta.
+        const target = (a?.[0] ?? '').replace(/^(?:window|self|globalThis)\./, '')
+        if (!a || !/^JSON(\.|$)/.test(target)) continue
+        const key = /^\[\?\.([A-Za-z_$][\w$]*)\]/.exec(a[2] ?? '')
+        if (!code.includes('editInboundObjectFn') || target !== 'JSON.stringify' || a[1] !== '0' || !key) {
+          ok = false
+          break
+        }
+        keys.add(key[1])
+      }
+      if (ok && keys.size > 0) gateKeys = [...keys]
+    }
+    // Las dos piezas van DESPUES de los scriptlets, dentro del mismo bundle, y
+    // usan los nativos guardados al empezar (__ra, __ft, __js).
+    const gate = gateKeys
+      ? `;(function(){var c=JSON.stringify;if(c===__js)return;var K=${JSON.stringify(gateKeys)},A=Array.isArray;` +
+        `function k(o){if(typeof o.toJSON==='function')return true;for(var i=0;i<K.length;i++)if(K[i] in o)return true;return false}` +
+        `function pasa(o){if(o===null||typeof o!=='object')return false;if(!A(o))return k(o);` +
+        `for(var i=0;i<o.length;i++){var e=o[i];if(e!==null&&typeof e==='object'&&(A(e)||k(e)))return true}return false}` +
+        `__gate=new Proxy(c,{apply:function(t,s,a){return __ra(pasa(a[0])?c:__js,s,a)}});JSON.stringify=__gate})();\n`
+      : ''
+    // Tambien disfraza la compuerta: su toString dice el del stringify nativo, y
+    // el del propio toString, el del toString nativo.
+    const flat =
+      `;(function(){var c=Function.prototype.toString;if(c===__ft&&!__gate)return;` +
+      `var P='function () { [native code] }',S=__ft.call(__js),T=__ft.call(__ft),f;` +
+      `f=new Proxy(c,{apply:function(t,s,a){if(s===__gate)return S;if(s===f)return T;` +
+      `var r=__ra(__ft,s,a);return r===P?__ra(c,s,a):r}});Function.prototype.toString=f})();\n`
     const bundle =
       `(function(){var __ra=Reflect.apply,__fa=Function.prototype.apply,` +
-      `__ft=Function.prototype.toString;\n${parts.join('\n')}\n})();`
+      `__ft=Function.prototype.toString,__js=JSON.stringify,__gate=null;\n` +
+      `${parts.join('\n')}\n${gate}${flat}})();`
+    // Para la linea de consola: que se vea si la compuerta quedo puesta.
+    const gateNote = gateKeys ? ` · compuerta ${gateKeys.join(',')}` : ''
 
     // Como inyectarlo. YouTube fuerza Trusted Types (`require-trusted-types-for
     // 'script'`): ahi eval NO vale — el eval INDIRECTO ni siquiera EJECUTA un
@@ -160,7 +243,7 @@ function mainWorld(cfg: MainWorldConfig): void {
     if (plainOk) {
       try {
         ;(0, eval)(bundle)
-        console.info(`[tek] adblock: ${parts.length} scriptlets via eval`)
+        console.info(`[tek] adblock: ${parts.length} scriptlets via eval${gateNote}`)
       } catch (e) {
         console.info('[tek] adblock: eval del bundle rechazado:', e)
       }
@@ -192,7 +275,7 @@ function mainWorld(cfg: MainWorldConfig): void {
         el.remove()
         // info y no debug A PROPOSITO (mismo motivo que el spoof de lact): DevTools
         // esconde los debug salvo subir a Verbose, y esta capa debe fallar RUIDOSA.
-        console.info(`[tek] adblock: ${parts.length} scriptlets via <script> (TT=${!!policy})`)
+        console.info(`[tek] adblock: ${parts.length} scriptlets via <script> (TT=${!!policy})${gateNote}`)
       }
       if (document.documentElement) {
         inject()
