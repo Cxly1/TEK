@@ -59,6 +59,8 @@ export class MiniPlayer {
   private meta: PipMeta | null = null
   private mode: PipMode = 'docked'
   private minimized = false
+  /** Una pagina esta en pantalla completa: el mini ACOPLADO no se dibuja. */
+  private covered = false
   private floatWin: BrowserWindow | null = null
   /** Tamano del video (se preserva al redimensionar en flotante y volver a acoplar). */
   private w = DEF_W
@@ -112,6 +114,18 @@ export class MiniPlayer {
   /** ¿Hay un video en el mini ahora mismo? */
   get active(): boolean {
     return !!this.view
+  }
+
+  /**
+   * Una pagina entra o sale de pantalla completa. El mini ACOPLADO vive dentro
+   * de la ventana de TEK y quedaria pegado encima del video: se esconde mientras
+   * dure (su audio sigue, como al minimizarlo) y vuelve a su esquina al salir.
+   * El flotante no se toca: es otra ventana, siempre encima, como el PiP de Chrome.
+   */
+  setCovered(on: boolean): void {
+    if (this.covered === on) return
+    this.covered = on
+    if (this.view && this.chrome && this.mode === 'docked') this.layout()
   }
 
   /** Id de la pestana que esta en el mini (o null). */
@@ -396,6 +410,16 @@ export class MiniPlayer {
   /** Coloca las dos capas segun el modo y el estado (minimizado o no). */
   private layout(): void {
     if (!this.view || !this.chrome) return
+    const floating = this.mode === 'floating' && !!this.floatWin && !this.floatWin.isDestroyed()
+    // Acoplado bajo una pagina en pantalla completa (ver setCovered): la barra
+    // se oculta y el video se queda en 0x0 pero VISIBLE, por lo mismo que el
+    // minimizado de abajo: ocultar la vista corta su audio.
+    if (!floating && this.covered) {
+      this.chrome.setVisible(false)
+      this.view.setVisible(true)
+      this.view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+      return
+    }
     // Ambas capas SIEMPRE visibles; el minimizado se logra con alto 0 del video
     // (no ocultandolo), asi el audio nunca se corta al colapsar a pildora.
     this.chrome.setVisible(true)

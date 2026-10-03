@@ -53,6 +53,14 @@ ipcRenderer.on(IPC.themeChanged, (_e, t: unknown) => {
   for (const cb of themeListeners) cb(t)
 })
 
+// --- Quieto: nadie mira la barra ---------------------------------------------
+// El main avisa cuando la ventana pierde el foco, la pestana que ves suena o una
+// pagina esta en pantalla completa; <html data-quieto> congela las animaciones
+// sin fin del shell (shell.css). Directo al atributo, sin pasar por React.
+ipcRenderer.on(IPC.shellQuiet, (_e, on: unknown) => {
+  document.documentElement?.toggleAttribute('data-quieto', on === true)
+})
+
 /** Suscripcion estandar a un evento main->renderer. Devuelve el des-suscriptor. */
 function on<T>(channel: string, cb: (payload: T) => void): () => void {
   const listener = (_e: unknown, payload: T): void => cb(payload)

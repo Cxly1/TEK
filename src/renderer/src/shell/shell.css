@@ -1332,3 +1332,19 @@
   transform: scaleY(0.35);
 }
 
+
+/* Quieto: nadie mira la barra (TEK no es la ventana activa, la pestana que ves
+   esta sonando o una pagina esta en pantalla completa; lo decide el main). Las
+   decoraciones que giran o laten sin fin se congelan DONDE ESTEN, sin salto, y
+   siguen desde ahi al volver. Cada una obligaba a componer ~60 fotogramas por
+   segundo aunque nadie la viera: ~18% de un nucleo en el proceso de la GPU con
+   nada mas pasando. Las de carga (barra, punto) siguen: duran lo que la carga. */
+:root[data-quieto] .tab.is-active::before,
+:root[data-quieto] .tab-new::before,
+:root[data-quieto] .tab-new::after,
+:root[data-quieto] .tab-mute .wave,
+:root[data-quieto] .tb-tool-dot.is-ping::after,
+:root[data-quieto] .music-eq i,
+:root[data-quieto] .canvas-np-eq i {
+  animation-play-state: paused;
+}

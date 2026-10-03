@@ -221,7 +221,10 @@ export const IPC = {
   /** Al shell: que paso en la capa (se eligio algo del menu, o se cerro sola). */
   layerEvent: 'layer:event',
   /** A todas las superficies de TEK: cambio el tema (se repintan al vuelo). */
-  themeChanged: 'theme:changed'
+  themeChanged: 'theme:changed',
+  /** Al shell: nadie mira la barra (ventana sin foco, pestana sonando o pantalla
+   *  completa) -> congela sus animaciones sin fin. Lo aplica el preload. */
+  shellQuiet: 'shell:quiet'
 } as const
 
 /**

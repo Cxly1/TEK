@@ -236,6 +236,11 @@ function createWindow(): void {
   floating.onEvent = (e) => sendToShell(IPC.layerEvent, e)
   floating.onHidden = () => views?.refocus()
   views.onRestack = () => floating?.raise() ?? false
+  // Una pagina en pantalla completa tapa la ventana: el menu que estuviera
+  // abierto se cierra (quedaria flotando sobre el video).
+  views.onFullscreen = (on) => {
+    if (on) floating?.close(true)
+  }
 
   // Musica: Media necesita mapear webContents<->pestana, y ViewManager le avisa
   // cuando una pestana empieza a sonar (modo "una sola pestana a la vez").

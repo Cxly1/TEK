@@ -204,6 +204,14 @@ export class ViewManager {
   private lastFaviconsSig = ''
   /** ¿Se esta viendo la pestana nueva (el lienzo del shell)? */
   private canvasShown = false
+  /** Pestana con la pagina en pantalla completa (el boton del reproductor, la f
+   *  de YouTube...): su vista tapa la ventana entera. null = ninguna. */
+  private fsTabId: string | null = null
+  /** La ventana esta en pantalla completa porque lo pediste con F11 (y no una
+   *  pagina): al terminar la de una pagina, la ventana se queda como estaba. */
+  private f11 = false
+  /** Ultimo "quieto" mandado al shell (null = aun nada, o el shell recargo). */
+  private lastQuiet: boolean | null = null
   /** Hooks de automatizacion (los cablea index.ts): navegacion y dom-ready. */
   onNavigate: ((tabId: string, url: string, host: string, wc: Electron.WebContents) => void) | null =
     null
@@ -223,6 +231,8 @@ export class ViewManager {
   openExternal: ((wc: Electron.WebContents, url: string) => void) | null = null
   /** TEK va a pedir una descarga por su cuenta ("Guardar imagen"): cuenta como clic. */
   onExpectDownload: ((url: string) => void) | null = null
+  /** Una pagina entra o sale de pantalla completa (index.ts cierra la capa flotante). */
+  onFullscreen: ((on: boolean) => void) | null = null
   /**
    * Tras reordenar las vistas: la capa flotante (menu ☰, Descargas, Historial)
    * vuelve al tope (FloatingLayer). Devuelve true si esta a la vista: entonces
@@ -256,11 +266,29 @@ export class ViewManager {
     this.win.webContents.on('did-finish-load', () => {
       this.lastTabsJson = ''
       this.lastFaviconsSig = ''
+      this.lastQuiet = null
       if (this.tabs.length > 0) this.emit()
+      this.syncQuiet()
     })
-    // El dwell solo corre cuando la ventana tiene el foco.
-    this.win.on('blur', () => this.accrue())
-    this.win.on('focus', () => this.resumeTiming())
+    // El dwell solo corre cuando la ventana tiene el foco. Y sin foco, la barra
+    // de TEK se queda quieta (ver syncQuiet).
+    this.win.on('blur', () => {
+      this.accrue()
+      this.syncQuiet()
+    })
+    this.win.on('focus', () => {
+      this.resumeTiming()
+      this.syncQuiet()
+    })
+    // La ventana salio de pantalla completa por su cuenta (Esc, Windows...): F11
+    // ya no esta, y si una pagina seguia "en pantalla completa", sale tambien.
+    this.win.on('leave-full-screen', () => {
+      this.f11 = false
+      if (this.fsTabId) {
+        this.dropHtmlFullscreen(false)
+        this.applyVisibility()
+      }
+    })
     // Cuando el adblock bloquea algo, refresca el contador sin saturar.
     this.adblock.onBlocked = () => this.scheduleCountEmit()
 
@@ -288,7 +316,11 @@ export class ViewManager {
     const a = this.active
     if (!a) return
     const [w, h] = this.win.getContentSize()
-    if (this.shouldShowActive()) {
+    if (this.shouldShowActive() && this.fsTabId === a.id) {
+      // Pagina en pantalla completa: su vista tapa la ventana entera (la barra
+      // de TEK, la de busqueda y las franjas de avisos quedan debajo).
+      a.view.setBounds({ x: 0, y: 0, width: w, height: h })
+    } else if (this.shouldShowActive()) {
       // Con la barra de busqueda abierta, la vista baja para dejar su franja
       // visible (no se puede flotar un overlay sobre la vista nativa).
       const top = TOPBAR_HEIGHT + (this.findOpen ? FINDBAR_HEIGHT : 0)
@@ -301,6 +333,11 @@ export class ViewManager {
   }
 
   private applyVisibility(): void {
+    // La pantalla completa de una pagina dura mientras sea la pestana que se ve:
+    // si TEK pone otra cosa delante (otra pestana, la paleta, una caida...), sale.
+    if (this.fsTabId && (this.fsTabId !== this.activeId || !this.shouldShowActive())) {
+      this.dropHtmlFullscreen(false)
+    }
     const showActive = this.shouldShowActive()
     const pipId = this.mini.tabId
     for (const t of this.tabs) {
@@ -311,6 +348,9 @@ export class ViewManager {
       t.view.setVisible(isActive && showActive)
     }
     this.layout()
+    // El mini acoplado no se dibuja sobre una pagina en pantalla completa (el
+    // flotante es otra ventana, siempre encima, como el PiP de Chrome).
+    this.mini.setCovered(this.fsTabId !== null)
     // El mini siempre por encima de la pestana activa (re-eleva su z-order).
     if (this.mini.active) this.mini.raise()
     // ...y la capa flotante, si esta a la vista, por encima de todo (con el teclado).
@@ -536,6 +576,8 @@ export class ViewManager {
       if (!/^https?:\/\//i.test(url)) return
       // Si estaba en el mini-player, vuelve a su pestana: alli se ve el aviso.
       if (this.mini.tabId === tab.id) this.exitPip(false)
+      // En pantalla completa: la pagina ya no puede salir sola de ella.
+      if (this.fsTabId === tab.id) this.dropHtmlFullscreen(true)
       if (tab.audibleOffTimer) clearTimeout(tab.audibleOffTimer)
       tab.audibleOffTimer = null
       tab.audible = false
@@ -547,6 +589,13 @@ export class ViewManager {
       this.applyVisibility()
       this.emit()
     })
+    // Pantalla completa de la PAGINA (el boton del reproductor, la f de YouTube,
+    // Netflix...). Electron ya pone la VENTANA en pantalla completa, pero la
+    // vista de la pestana se quedaba con sus medidas de siempre, debajo de la
+    // barra de TEK: el video ocupaba el hueco de la pagina y la barra seguia a
+    // la vista. Mientras dure, la vista tapa la ventana entera.
+    wc.on('enter-html-full-screen', () => this.enterHtmlFullscreen(tab))
+    wc.on('leave-html-full-screen', () => this.leaveHtmlFullscreen(tab.id))
     wc.on('did-start-loading', push)
     wc.on('did-stop-loading', push)
     wc.on('did-navigate', () => {
@@ -707,6 +756,7 @@ export class ViewManager {
       void this.removePipSiteCss()
       this.mini.release()
     }
+    if (this.fsTabId === id) this.dropHtmlFullscreen(true)
     if (id === this.activeId) this.accrue()
     const [tab] = this.tabs.splice(idx, 1)
     if (tab.audibleOffTimer) clearTimeout(tab.audibleOffTimer)
@@ -823,6 +873,7 @@ export class ViewManager {
       this.win.webContents.send(IPC.tabsState, state)
     }
     this.notifyCanvas()
+    this.syncQuiet()
     this.schedulePersist()
   }
 
@@ -1024,6 +1075,9 @@ export class ViewManager {
     if (idx === -1) return
     // Si la pestana esta en el mini, sacala primero (su vista vuelve a la pestana).
     if (this.mini.tabId === id) this.exitPip(false)
+    // Cerrada en pantalla completa: la ventana vuelve a su tamano aqui, porque la
+    // pagina se cierra sin salir de ella.
+    if (this.fsTabId === id) this.dropHtmlFullscreen(true)
     if (id === this.activeId) this.accrue()
     const [tab] = this.tabs.splice(idx, 1)
     if (tab.audibleOffTimer) clearTimeout(tab.audibleOffTimer)
@@ -1150,6 +1204,82 @@ export class ViewManager {
     else this.accrue()
   }
 
+  // --- Pantalla completa de una pagina ----------------------------------------
+
+  /** Una pagina entro en pantalla completa (Electron ya agrando la ventana). */
+  private enterHtmlFullscreen(tab: Tab): void {
+    // El video del mini la pide (doble clic, su boton): vuelve a su pestana y
+    // desde ahi ocupa la pantalla. Cualquier otra pestana que no sea la que ves
+    // (no deberia pasar: hace falta un clic) pasa a verse.
+    if (this.mini.tabId === tab.id) this.exitPip(true)
+    else if (this.activeId !== tab.id) this.activate(tab.id)
+    this.fsTabId = tab.id
+    // La ventana la agranda Electron, porque es la duena de la pagina. Si la
+    // pagina venia del mini flotante, la duena era la otra ventana: aqui a mano.
+    if (!this.win.isFullScreen()) this.win.setFullScreen(true)
+    this.onFullscreen?.(true)
+    // Si TEK tiene algo delante (la paleta abierta), esto mismo la saca.
+    this.applyVisibility()
+    this.syncQuiet()
+  }
+
+  /** La pagina salio de pantalla completa (Esc, su boton): todo vuelve a su sitio. */
+  private leaveHtmlFullscreen(id: string): void {
+    if (this.fsTabId !== id) return
+    this.fsTabId = null
+    this.onFullscreen?.(false)
+    this.applyVisibility()
+    this.syncQuiet()
+  }
+
+  /**
+   * TEK termina la pantalla completa de una pagina (cambiaste de pestana, F11,
+   * Ctrl+F, la pagina se cerro o se cayo). Se le pide a la pagina que salga, y
+   * asi Electron devuelve la ventana a como estaba; si la pagina ya no puede
+   * (`pageGone`), la ventana se restaura aqui. No reacomoda las vistas: eso lo
+   * hace quien llama.
+   */
+  private dropHtmlFullscreen(pageGone: boolean): void {
+    const tab = this.tabs.find((t) => t.id === this.fsTabId)
+    this.fsTabId = null
+    this.onFullscreen?.(false)
+    const wc = !pageGone && tab ? this.liveWc(tab) : null
+    if (wc && !wc.isCrashed()) {
+      void wc
+        .executeJavaScript('document.fullscreenElement ? document.exitFullscreen() : 0', true)
+        .catch(() => undefined)
+      // Red de seguridad: si la pagina no sale, que no se quede la ventana en
+      // pantalla completa con la barra de TEK a la vista.
+      setTimeout(() => this.restoreWindowIfOrphan(), 1500)
+    } else {
+      this.restoreWindowIfOrphan()
+    }
+    this.syncQuiet()
+  }
+
+  /** La ventana esta en pantalla completa sin pagina que la pida ni F11: vuelve. */
+  private restoreWindowIfOrphan(): void {
+    if (this.win.isDestroyed() || this.fsTabId || this.f11) return
+    if (this.win.isFullScreen()) this.win.setFullScreen(false)
+  }
+
+  /**
+   * "Quieto" = nadie esta mirando la barra de TEK: la ventana no es la activa,
+   * la pestana que ves esta sonando (estas viendo u oyendo algo) o una pagina
+   * esta en pantalla completa. El shell congela entonces sus animaciones sin fin
+   * (borde dorado, "+", ondas, barras de musica) donde esten: cada una obligaba a
+   * componer ~60 fotogramas por segundo, ~18% de un nucleo en el proceso de la
+   * GPU con nada mas pasando (medido el 2026-10-03). Solo se manda al cambiar.
+   */
+  private syncQuiet(): void {
+    if (this.win.isDestroyed()) return
+    const a = this.active
+    const quiet = !this.win.isFocused() || this.fsTabId !== null || (!!a && !a.blank && a.audible)
+    if (quiet === this.lastQuiet) return
+    this.lastQuiet = quiet
+    this.win.webContents.send(IPC.shellQuiet, quiet)
+  }
+
   // --- Mini-player (Picture-in-Picture) --------------------------------------
 
   /** Metadatos para la barra del mini (titulo/host/favicon del sitio). */
@@ -1171,6 +1301,8 @@ export class ViewManager {
   enterPip(tabId?: string): void {
     const tab = tabId ? this.tabs.find((t) => t.id === tabId) : this.active
     if (!tab || tab.blank || !this.liveWc(tab)) return
+    // Mandar al mini una pagina en pantalla completa: primero sale de ella.
+    if (this.fsTabId) this.dropHtmlFullscreen(false)
     // Un solo mini a la vez: si habia otro, su vista vuelve a su pestana.
     if (this.mini.active) this.exitPip(false)
     if (this.activeId === tab.id) {
@@ -1343,6 +1475,12 @@ export class ViewManager {
 
   /** Abre/cierra la barra de busqueda: baja/sube la vista para hacerle hueco. */
   setFindOpen(open: boolean): void {
+    // La barra de busqueda vive en el shell, debajo de una pagina en pantalla
+    // completa: para que se vea, la pagina sale de ella.
+    if (open && this.fsTabId) {
+      this.dropHtmlFullscreen(false)
+      this.applyVisibility()
+    }
     this.findOpen = open
     if (!open) this.stopFind()
     this.layout()
@@ -1444,10 +1582,17 @@ export class ViewManager {
       e.preventDefault()
       this.goForward()
     }
-    // Pantalla completa (F11).
+    // Pantalla completa (F11). Con una pagina en pantalla completa, F11 la saca
+    // (como en Chrome) en vez de tocar la ventana por debajo de ella.
     else if (key === 'F11') {
       e.preventDefault()
-      this.win.setFullScreen(!this.win.isFullScreen())
+      if (this.fsTabId) {
+        this.dropHtmlFullscreen(false)
+        this.applyVisibility()
+      } else {
+        this.f11 = !this.win.isFullScreen()
+        this.win.setFullScreen(this.f11)
+      }
     }
     // DevTools (F12).
     else if (key === 'F12') {
